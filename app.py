@@ -370,4 +370,4 @@ HTML_LAYOUT = """
 
 # --- BACKEND API ---
 
-@app.rout
+@app.route
