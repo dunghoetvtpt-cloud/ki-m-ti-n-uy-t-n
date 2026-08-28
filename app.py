@@ -6,10 +6,10 @@ from flask import Flask, render_template_string
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-# --- CẤU HÌNH TOKEN ---
-TELEGRAM_BOT_TOKEN = "8880267204:AAG4JJRziEY5e66yzI2pas305ZX3rQCHEh8"
+# --- CẤU HÌNH TOKEN MỚI & THÔNG TIN ---
+TELEGRAM_BOT_TOKEN = "8727297138:AAE-D_k_XzdX9IoEER_lCl1FlvBprdroiSQ"
 LINK4M_API_TOKEN = "68a76c1354de3f0da567ca17"
-RENDER_DOMAIN = "https://bot-link-vuot.onrender.com" # Nhớ thay link Render của bạn vào đây
+RENDER_DOMAIN = "https://bot-link-vuot.onrender.com"
 
 VALID_KEYS = set()
 
@@ -106,7 +106,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    # Gửi kèm ảnh banner trực quan (hoặc chỉ gửi text nếu không dùng ảnh)
     await update.message.reply_text(
         welcome_text,
         reply_markup=reply_markup,
@@ -171,7 +170,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_text in VALID_KEYS:
         VALID_KEYS.remove(user_text)
         
-        # Giao diện khi nhận file thành công (Có thể thay thế bằng file thật .env, .json, .txt bằng reply_document)
         success_msg = (
             "✅ **XÁC NHẬN THÀNH CÔNG!**\n\n"
             "Cảm ơn bạn đã ủng hộ. Dưới đây là thông tin file config của bạn:\n\n"
@@ -207,4 +205,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+        
