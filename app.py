@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-ESCAPE MASTER AUTO BET BOT - RENDER 24/7 VERSION
-==============================================
-- Chạy trực tiếp trên Server không cần hỏi input
-- Tự động cược và bắn thông báo về Telegram qua Bot
+ESCAPE MASTER AUTO BET BOT - RENDER WEB SERVICE + WORKER HYBRID
+==============================================================
+- Chạy Flask server để đáp ứng yêu cầu cổng Port của Render
+- Chạy bot WebSocket ngầm 24/7 không bị tắt
+- Tự động gửi kết quả về Telegram
 """
 import websocket
 import json
@@ -14,6 +15,14 @@ import sys
 import os
 from datetime import datetime
 from threading import Lock, Thread, Event
+from flask import Flask
+
+# --- CẤU HÌNH WEB SERVER CHO RENDER ---
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Escape Master Bot is running 24/7!"
 
 class Color:
     RESET = "\033[0m"
@@ -34,10 +43,10 @@ MULTIPLIER = 2.0
 WS_URL = "wss://api.escapemaster.net/escape_game/ws"
 
 # === CẤU HÌNH TÀI KHOẢN VÀ TELEGRAM CHO SERVER ===
-USER_ID = 123456789          # ⚠️ Thay ID game Escape Master của ông vào đây
-USER_SECRET_KEY = "TOKEN_HOẶC_SECRET_KEY_CỦA_ÔNG" # ⚠️ Thay Secret Key của ông vào đây
+USER_ID = 123456789                  # ⚠️ Thay ID game Escape Master của ông vào đây
+USER_SECRET_KEY = "SECRET_KEY_CỦA_ÔNG" # ⚠️ Thay Secret Key của ông vào đây
 TELEGRAM_BOT_TOKEN = "8513825480:AAGzOtGqQpkKJv1563LWU5_PcpexOJVi3HE"
-CHAT_ID = "ID_CHAT_TELEGRAM_CỦA_ÔNG" # ⚠️ Thay ID chat Telegram của ông vào đây (lấy từ @userinfobot)
+CHAT_ID = "CHAT_ID_CỦA_ÔNG"            # ⚠️ Thay ID chat Telegram của ông vào đây
 
 # === WATCHDOG CONFIG ===
 WATCHDOG_TIMEOUT = 360  # 360 giây (6 phút)
@@ -86,9 +95,6 @@ def reset_watchdog():
     global watchdog_last_bet_time
     with watchdog_lock:
         watchdog_last_bet_time = time.time()
-    with display_lock:
-        display_data["watchdog_remaining"] = WATCHDOG_TIMEOUT
-        display_data["show_watchdog"] = True
 
 def get_watchdog_remaining():
     with watchdog_lock:
@@ -114,15 +120,6 @@ def get_headers():
         "Accept": "application/json",
         "xb-language": "vi-VN"
     }
-
-def api_call(method, url, **kwargs):
-    try:
-        resp = session.request(method, url, headers=get_headers(), timeout=15, **kwargs)
-        if resp.status_code == 200:
-            return resp.json()
-    except:
-        pass
-    return {}
 
 def get_balance_from_wallet():
     url = "https://wallet.3games.io/api/wallet/total_asset_in_usdt"
@@ -160,10 +157,14 @@ def get_balance_from_wallet():
     return 0.0
 
 def get_balance_old():
-    data = api_call("POST", "https://api.escapemaster.net/escape_game/get_user_asset",
-                    json={"asset_type": ASSET_TYPE, "user_id": USER_ID})
-    if data and data.get("code") == 0:
-        return float(data.get("data", {}).get("balance", 0))
+    try:
+        resp = session.post("https://api.escapemaster.net/escape_game/get_user_asset",
+                            json={"asset_type": ASSET_TYPE, "user_id": USER_ID}, headers=get_headers(), timeout=10)
+        data = resp.json()
+        if data and data.get("code") == 0:
+            return float(data.get("data", {}).get("balance", 0))
+    except:
+        pass
     return 0.0
 
 def get_balance():
@@ -171,26 +172,26 @@ def get_balance():
     return bal if bal > 0 else get_balance_old()
 
 def enter_room(room_id):
-    data = api_call("POST", "https://api.escapemaster.net/escape_game/enter_room",
-                    json={"asset_type": ASSET_TYPE, "user_id": USER_ID, "room_id": room_id})
-    return data.get("code") == 0 if data else False
+    try:
+        resp = session.post("https://api.escapemaster.net/escape_game/enter_room",
+                            json={"asset_type": ASSET_TYPE, "user_id": USER_ID, "room_id": room_id}, headers=get_headers(), timeout=5)
+        return resp.json().get("code") == 0
+    except:
+        return False
 
 def place_bet(room_id, amount):
-    data = api_call("POST", "https://api.escapemaster.net/escape_game/bet",
-                    json={"asset_type": ASSET_TYPE, "user_id": USER_ID, "room_id": room_id, "bet_amount": amount})
-    return data.get("code") == 0 if data else False
+    try:
+        resp = session.post("https://api.escapemaster.net/escape_game/bet",
+                            json={"asset_type": ASSET_TYPE, "user_id": USER_ID, "room_id": room_id, "bet_amount": amount}, headers=get_headers(), timeout=5)
+        return resp.json().get("code") == 0
+    except:
+        return False
 
 def get_my_joined(page=1):
     url = "https://api.escapemaster.net/escape_game/my_joined"
     params = {"asset": ASSET_TYPE, "page": page, "page_size": 10}
     try:
-        resp = session.get(url, params=params, headers={
-            "user-id": str(USER_ID),
-            "user-login": "login_v2",
-            "user-secret-key": USER_SECRET_KEY,
-            "xb-language": "vi-VN",
-            "Accept": "application/json"
-        }, timeout=10)
+        resp = session.get(url, params=params, headers=get_headers(), timeout=10)
         data = resp.json()
         if data.get("code") == 0:
             return data.get("data", {})
@@ -203,33 +204,21 @@ def watchdog_loop():
     while True:
         time.sleep(2)
         if g_need_restart: continue
-        remaining = get_watchdog_remaining()
-        if remaining <= 0:
-            log(f"⏰ WATCHDOG: Restart WebSocket!", Color.RED)
+        if get_watchdog_remaining() <= 0:
+            log("⏰ WATCHDOG: Restart WebSocket!", Color.RED)
             restart_websocket()
             time.sleep(5)
 
-def display_loop():
-    global display_data
-    while True:
-        with display_lock:
-            log_msg = display_data.get("log_msg")
-            if log_msg:
-                display_data["log_msg"] = None
-                print(log_msg)
-        time.sleep(0.5)
-
-def start_random_rooms(bet_room_id, count_down):
-    global display_data, random_stop
+def start_random_rooms(count_down):
+    global random_stop
     random_stop.clear()
     def api_loop():
         rooms = [1, 2, 3, 4, 5, 6, 7, 8]
         while not random_stop.is_set():
             room_id = random.choice(rooms)
             try:
-                headers = get_headers()
-                payload = {"asset_type": ASSET_TYPE, "user_id": USER_ID, "room_id": room_id}
-                session.post("https://api.escapemaster.net/escape_game/enter_room", json=payload, headers=headers, timeout=2)
+                session.post("https://api.escapemaster.net/escape_game/enter_room",
+                             json={"asset_type": ASSET_TYPE, "user_id": USER_ID, "room_id": room_id}, headers=get_headers(), timeout=2)
             except:
                 pass
             time.sleep(0.2)
@@ -278,7 +267,6 @@ class Strategy:
             
             print(f"🏁 Phiên #{issue_id} | {status_text} | Lời trận: {profit:+.4f} | Tổng lời: {self.total_profit:+.4f}")
             
-            # Gửi thông báo về Telegram
             current_balance = get_balance()
             tele_msg = (
                 f"*ESCAPE MASTER* - #{issue_id}\n"
@@ -344,7 +332,7 @@ def do_bet(issue_id, count_down):
                 g_has_bet = True
                 log(f"✅ Cược thành công Phòng {room} | {amount} BUILD")
                 reset_watchdog()
-                start_random_rooms(room, count_down)
+                start_random_rooms(count_down)
                 
                 def check_api_backup():
                     time.sleep(count_down + 5)
@@ -359,7 +347,6 @@ def do_bet(issue_id, count_down):
                                 is_killed = not (award > bet_amt)
                                 kr = item.get("killed_room_id", "?")
                                 mr = item.get("room_id", "?")
-                                g_countdown_active = False
                                 strategy.process_result(issue_id, is_killed, award, bet_amt, kr, mr)
                                 return
                         g_has_bet = False
@@ -378,7 +365,7 @@ def do_bet(issue_id, count_down):
             g_current_issue_id = None
             restart_websocket()
     else:
-        log(f"⏸️ Nghỉ trận này")
+        log("⏸️ Nghỉ trận này")
         g_betting_issue_id = issue_id
         g_current_issue_id = None
         restart_websocket()
@@ -398,7 +385,6 @@ def on_message(ws, message):
                 do_bet(issue_id, count_down)
         elif msg_type == "notify_result":
             if g_need_restart: return
-            g_countdown_active = False
             random_stop.set()
             issue_id = data.get("issue_id")
             if g_has_bet and issue_id == g_betting_issue_id:
@@ -415,7 +401,6 @@ def on_message(ws, message):
 
 def on_error(ws, error):
     random_stop.set()
-    log(f"🔌 WS Error: {error}")
 
 def on_close(ws, close_status_code, close_msg):
     global ws_connected, g_need_restart
@@ -458,9 +443,10 @@ def run_websocket():
     )
     ws_app.run_forever(ping_interval=15, ping_timeout=10)
 
-if __name__ == "__main__":
-    print("🚀 Khởi chạy Bot Cược trên Server...")
-    Thread(target=display_loop, daemon=True).start()
+def start_bot_background():
+    """Hàm chạy bot ngầm tách biệt hoàn toàn với Flask"""
+    time.sleep(3) # Đợi web server khởi động xong
+    print("🚀 Khởi chạy Bot Cược ngầm trên Server...")
     Thread(target=watchdog_loop, daemon=True).start()
     while True:
         try:
@@ -468,3 +454,11 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"Lỗi: {e}, khởi động lại sau 3s...")
             time.sleep(3)
+
+if __name__ == "__main__":
+    # Khởi chạy luồng bot ngầm
+    Thread(target=start_bot_background, daemon=True).start()
+    
+    # Khởi chạy Flask Web Server ở luồng chính để qua mặt Render
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
