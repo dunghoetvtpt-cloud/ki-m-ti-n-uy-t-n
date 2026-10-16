@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-ESCAPE MASTER INTERACTIVE TELEGRAM BOT (POLLING)
-================================================
-- Dùng telebot Polling: gõ /start chắc chắn hiện Menu 100%
-- Flask giữ cổng HTTP cho Render không bị sập
+ESCAPE MASTER FULL-FEATURED TELEGRAM BOT - RENDER 24/7
+=====================================================
+- Full tính năng tuỳ chỉnh: Chọn loại tiền, mức cược, hệ số nhân, số vòng nghỉ.
+- Giao diện Inline Keyboard tương tác trực tiếp 100% trên Telegram.
+- Tự động bóc tách Link game hoặc nhận thông tin từ người dùng.
 """
 import telebot
 from telebot import types
@@ -13,21 +14,20 @@ import time
 import random
 import requests
 import os
+from urllib.parse import urlparse, parse_qs
 from threading import Thread, Lock
 from flask import Flask
 
-# --- CẤU HÌNH BOT TELEGRAM ---
 TELEGRAM_BOT_TOKEN = "8513825480:AAGzOtGqQpkKJv1563LWU5_PcpexOJVi3HE"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, parse_mode="Markdown")
 
-# --- FLASK SERVER GIỮ RENDER SỐNG ---
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Bot Telegram Escape Master đang chạy Polling 24/7!"
+    return "Escape Master Full Bot is running 24/7!"
 
-# Quản lý session từng người dùng
+# Lưu trữ cấu hình chi tiết cho từng người dùng (Chat ID)
 user_sessions = {}
 session_lock = Lock()
 
@@ -37,8 +37,11 @@ def get_session(chat_id):
             user_sessions[chat_id] = {
                 "user_id": "",
                 "secret_key": "",
-                "asset_type": "BUILD",
-                "base_bet": 1.0,
+                "asset_type": "BUILD",     # BUILD hoặc USDT
+                "base_bet": 1.0,           # Mức cược gốc
+                "loss_threshold": 2,       # Thua liên tiếp mấy ván thì nghỉ
+                "skip_rounds": 3,          # Số ván nghỉ
+                "multiplier": 2.0,         # Hệ số nhân gấp thếp
                 "running": False,
                 "ws": None,
                 "total_profit": 0.0,
@@ -52,89 +55,159 @@ def get_session(chat_id):
             }
         return user_sessions[chat_id]
 
-# --- XỬ LÝ LỆNH TELEGRAM ---
+# Menu chính
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     chat_id = message.chat.id
     sess = get_session(chat_id)
     
-    status_str = "🟢 Đang hoạt động" if sess["running"] else "🔴 Đang dừng"
-    uid_str = sess["user_id"] if sess["user_id"] else "Chưa cài đặt"
+    status_str = "🟢 Đang chạy" if sess["running"] else "🔴 Đang dừng"
+    uid_str = sess["user_id"] if sess["user_id"] else "Chưa có (Hãy gửi Link game)"
     
     msg_text = (
-        f"🎮 *XWORLD ESCAPE MASTER BOT*\n\n"
+        f"🎮 *XWORLD ESCAPE MASTER - FULL TOOL*\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
         f"📌 *Trạng thái:* {status_str}\n"
         f"👤 *User ID:* `{uid_str}`\n"
-        f"💰 *Mức cược:* `{sess['base_bet']} {sess['asset_type']}`\n\n"
-        f"Bấm các nút bên dưới để điều khiển bot:"
+        f"💰 *Đồng cược:* `{sess['asset_type']}`\n"
+        f"💵 *Cược gốc:* `{sess['base_bet']}`\n"
+        f"📈 *Hệ số nhân:* `x{sess['multiplier']}`\n"
+        f"🛡️ *Ngắt khi thua:* `{sess['loss_threshold']} ván (Nghỉ {sess['skip_rounds']} ván)`\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"👉 *Cách dùng:* Dán trực tiếp **Link game** vào đây để nạp tài khoản, sau đó dùng các nút bên dưới để cấu hình hoặc Bật Bot!"
     )
     
     markup = types.InlineKeyboardMarkup(row_width=2)
-    btn_login = types.InlineKeyboardButton("⚙️ Nhập ID & Key", callback_data="set_creds")
-    btn_start = types.InlineKeyboardButton("🚀 Bật Bot", callback_data="start_bot")
-    btn_stop = types.InlineKeyboardButton("⏹️ Tắt Bot", callback_data="stop_bot")
-    btn_status = types.InlineKeyboardButton("📊 Số dư & Thống kê", callback_data="status")
+    btn_toggle = types.InlineKeyboardButton("🚀 Bật Bot" if not sess["running"] else "⏹️ Tắt Bot", callback_data="toggle_bot")
+    btn_asset = types.InlineKeyboardButton(f"🪙 Đổi Coin: {sess['asset_type']}", callback_data="toggle_asset")
+    btn_bet = types.InlineKeyboardButton(f"💵 Đổi Cược Gốc ({sess['base_bet']})", callback_data="set_base_bet")
+    btn_mult = types.InlineKeyboardButton(f"📈 Hệ số nhân (x{sess['multiplier']})", callback_data="set_mult")
+    btn_status = types.InlineKeyboardButton("📊 Thống kê chi tiết", callback_data="status")
     
-    markup.add(btn_login)
-    markup.add(btn_start, btn_stop)
+    markup.add(btn_toggle)
+    markup.add(btn_asset, btn_bet)
+    markup.add(btn_mult)
     markup.add(btn_status)
     
     bot.send_message(chat_id, msg_text, reply_markup=markup)
 
-@bot.message_handler(commands=['login'])
-def handle_login(message):
+# Nhận link game tự động bóc tách
+@bot.message_handler(func=lambda message: True)
+def handle_all_messages(message):
     chat_id = message.chat.id
+    text = message.text.strip()
     sess = get_session(chat_id)
-    parts = message.text.split()
     
-    if len(parts) >= 3:
-        sess["user_id"] = parts[1].strip()
-        sess["secret_key"] = parts[2].strip()
-        bot.reply_to(message, f"✅ Đã lưu cấu hình thành công!\n• User ID: `{sess['user_id']}`\n\nGõ `/start` để mở lại menu.")
-    else:
-        bot.reply_to(message, "⚠️ Sai cú pháp!\nVui lòng gõ theo mẫu:\n`/login <User_ID> <Secret_Key>`\n\n*(Ví dụ: `/login 123456 abcxyz123`)*")
+    if "userId=" in text and "secretKey=" in text:
+        try:
+            parsed_url = urlparse(text)
+            query_params = parse_qs(parsed_url.query)
+            uid = query_params.get("userId", [None])[0]
+            skey = query_params.get("secretKey", [None])[0]
+            
+            if uid and skey:
+                sess["user_id"] = uid
+                sess["secret_key"] = skey
+                bot.reply_to(message, f"✅ **Nạp tài khoản thành công!**\n• User ID: `{uid}`\n\nGõ `/start` để mở lại Menu điều khiển đầy đủ.")
+                return
+        except:
+            pass
+            
+    bot.reply_to(message, "⚠️ Tin nhắn không hợp lệ. Hãy dán **Link game** chứa `userId` và `secretKey`, hoặc gõ `/start` để mở menu.")
 
+# Xử lý các nút bấm tương tác
 @bot.callback_query_handler(func=lambda call: True)
 def callback_inline(call):
     chat_id = call.message.chat.id
     sess = get_session(chat_id)
+    data = call.data
     
-    if call.data == "set_creds":
-        bot.send_message(chat_id, "💡 Hãy gửi tin nhắn theo cú pháp sau để nhập tài khoản:\n\n`/login <User_ID> <Secret_Key>`\n\n*(Ví dụ: `/login 100234988 abc123def456`)*")
-    
-    elif call.data == "start_bot":
-        if not sess["user_id"] or not sess["secret_key"]:
-            bot.send_message(chat_id, "⚠️ Bạn chưa cài đặt User ID và Secret Key!\nHãy bấm nút *⚙️ Nhập ID & Key* trước.")
-            return
-        if sess["running"]:
-            bot.send_message(chat_id, "⚠️ Bot của bạn đang chạy rồi!")
-            return
-            
-        sess["running"] = True
-        Thread(target=run_bot_worker, args=(chat_id,), daemon=True).start()
-        bot.send_message(chat_id, "🚀 *Đã bật Bot thành công!* Bot bắt đầu cược ngầm 24/7 và báo kết quả về đây.")
+    if data == "toggle_bot":
+        if not sess["running"]:
+            if not sess["user_id"] or not sess["secret_key"]:
+                bot.answer_callback_query(call.id, "⚠️ Chưa có User ID! Hãy dán link game trước.", show_alert=True)
+                return
+            sess["running"] = True
+            Thread(target=run_bot_worker, args=(chat_id,), daemon=True).start()
+            bot.answer_callback_query(call.id, "🚀 Đã khởi động Bot thành công!")
+        else:
+            sess["running"] = False
+            if sess["ws"]:
+                try: sess["ws"].close()
+                except: pass
+            bot.answer_callback_query(call.id, "⏹️ Đã dừng Bot!")
+        refresh_menu(call.message)
         
-    elif call.data == "stop_bot":
-        sess["running"] = False
-        if sess["ws"]:
-            try:
-                sess["ws"].close()
-            except:
-                pass
-        bot.send_message(chat_id, "⏹️ *Đã dừng Bot thành công.*")
+    elif data == "toggle_asset":
+        sess["asset_type"] = "USDT" if sess["asset_type"] == "BUILD" else "BUILD"
+        bot.answer_callback_query(call.id, f"Đã đổi đồng cược sang {sess['asset_type']}")
+        refresh_menu(call.message)
         
-    elif call.data == "status":
+    elif data == "set_base_bet":
+        # Xoay vòng mức cược gốc: 1.0 -> 2.0 -> 5.0 -> 10.0 -> 1.0
+        bets = [1.0, 2.0, 5.0, 10.0]
+        next_idx = (bets.index(sess["base_bet"]) + 1) % len(bets) if sess["base_bet"] in bets else 0
+        sess["base_bet"] = bets[next_idx]
+        bot.answer_callback_query(call.id, f"Đã đổi mức cược thành {sess['base_bet']}")
+        refresh_menu(call.message)
+        
+    elif data == "set_mult":
+        # Xoay vòng hệ số nhân: 1.5 -> 2.0 -> 2.5 -> 3.0 -> 1.5
+        mults = [1.5, 2.0, 2.5, 3.0]
+        next_idx = (mults.index(sess["multiplier"]) + 1) % len(mults) if sess["multiplier"] in mults else 0
+        sess["multiplier"] = mults[next_idx]
+        bot.answer_callback_query(call.id, f"Đã đổi hệ số nhân thành x{sess['multiplier']}")
+        refresh_menu(call.message)
+        
+    elif data == "status":
         bal = get_balance_for_session(sess)
         wr = (sess["wins"] / sess["total_bets"] * 100) if sess["total_bets"] > 0 else 0
         msg = (
-            f"📊 *THỐNG KÊ BOT*\n\n"
+            f"📊 *THỐNG KÊ CHI TIẾT*\n"
+            f"━━━━━━━━━━━━━━━━━━━\n"
             f"Trạng thái: {'🟢 Đang chạy' if sess['running'] else '🔴 Đang dừng'}\n"
-            f"Số dư hiện tại: `{bal:.4f} {sess['asset_type']}`\n"
-            f"Tổng số ván: `{sess['total_bets']}`\n"
+            f"Số dư ví: `{bal:.4f} {sess['asset_type']}`\n"
+            f"Tổng ván đánh: `{sess['total_bets']}`\n"
             f"Thắng / Thua: `{sess['wins']}` / `{sess['losses']}` (WR: `{wr:.1f}%`)\n"
-            f"Tổng lời/lỗ: `{sess['total_profit']:+.4f} {sess['asset_type']}`"
+            f"Tổng lợi nhuận: `{sess['total_profit']:+.4f} {sess['asset_type']}`"
         )
         bot.send_message(chat_id, msg)
+
+def refresh_menu(message):
+    chat_id = message.chat.id
+    sess = get_session(chat_id)
+    status_str = "🟢 Đang chạy" if sess["running"] else "🔴 Đang dừng"
+    uid_str = sess["user_id"] if sess["user_id"] else "Chưa có (Hãy gửi Link game)"
+    
+    msg_text = (
+        f"🎮 *XWORLD ESCAPE MASTER - FULL TOOL*\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"📌 *Trạng thái:* {status_str}\n"
+        f"👤 *User ID:* `{uid_str}`\n"
+        f"💰 *Đồng cược:* `{sess['asset_type']}`\n"
+        f"💵 *Cược gốc:* `{sess['base_bet']}`\n"
+        f"📈 *Hệ số nhân:* `x{sess['multiplier']}`\n"
+        f"🛡️ *Ngắt khi thua:* `{sess['loss_threshold']} ván (Nghỉ {sess['skip_rounds']} ván)`\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"👉 Dùng các nút bên dưới để tùy chỉnh nhanh:"
+    )
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    btn_toggle = types.InlineKeyboardButton("🚀 Bật Bot" if not sess["running"] else "⏹️ Tắt Bot", callback_data="toggle_bot")
+    btn_asset = types.InlineKeyboardButton(f"🪙 Đổi Coin: {sess['asset_type']}", callback_data="toggle_asset")
+    btn_bet = types.InlineKeyboardButton(f"💵 Đổi Cược Gốc ({sess['base_bet']})", callback_data="set_base_bet")
+    btn_mult = types.InlineKeyboardButton(f"📈 Hệ số nhân (x{sess['multiplier']})", callback_data="set_mult")
+    btn_status = types.InlineKeyboardButton("📊 Thống kê chi tiết", callback_data="status")
+    
+    markup.add(btn_toggle)
+    markup.add(btn_asset, btn_bet)
+    markup.add(btn_mult)
+    markup.add(btn_status)
+    
+    try:
+        bot.edit_message_text(msg_text, chat_id, message.message_id, reply_markup=markup, parse_mode="Markdown")
+    except:
+        pass
 
 def get_balance_for_session(sess):
     try:
@@ -220,15 +293,16 @@ def run_bot_worker(chat_id):
                     if not is_killed:
                         sess["wins"] += 1
                         sess["consecutive_losses"] = 0
-                        sess["base_bet"] = 1.0
+                        sess["base_bet"] = 1.0 # Reset về mức gốc khi thắng
                         sess["skips_left"] = 0
                     else:
                         sess["losses"] += 1
                         sess["consecutive_losses"] += 1
-                        if sess["consecutive_losses"] >= 2:
-                            sess["skips_left"] = 3
+                        if sess["consecutive_losses"] >= sess["loss_threshold"]:
+                            sess["skips_left"] = sess["skip_rounds"]
+                            sess["consecutive_losses"] = 0
                         else:
-                            sess["base_bet"] *= 2.0
+                            sess["base_bet"] *= sess["multiplier"]
                     
                     sess["total_profit"] += profit
                     bal = get_balance_for_session(sess)
@@ -268,7 +342,6 @@ def run_bot_worker(chat_id):
         time.sleep(3)
 
 def run_telebot_polling():
-    # Xóa Webhook cũ để tránh xung đột Polling
     try:
         bot.remove_webhook()
     except:
@@ -276,9 +349,6 @@ def run_telebot_polling():
     bot.infinity_polling(timeout=10, long_polling_timeout=5)
 
 if __name__ == "__main__":
-    # Chạy Telegram Polling ở thread riêng
     Thread(target=run_telebot_polling, daemon=True).start()
-    
-    # Chạy Flask Server ở thread chính để giữ Render sống
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    port = int(os.environ.com("PORT", 5000)) if hasattr(os.environ, "get") else 5000
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
