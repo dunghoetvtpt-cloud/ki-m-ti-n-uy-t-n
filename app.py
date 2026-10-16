@@ -194,7 +194,6 @@ def get_account_state(game_prefix, uid):
         }
     return account_threads[key]
 
-# --- KIỂM TRA XÁC THỰC KHI GÕ /START ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     chat_id = message.chat.id
@@ -456,17 +455,20 @@ def handle_text_messages(message):
         bot.reply_to(message, "💡 Gõ `/start` để mở bảng chọn game.")
 
 # ==========================================
-# ENGINE 1: VUA THOÁT HIỂM
+# ENGINE 1: VUA THOÁT HIỂM (Tách biến an toàn chống ngắt dòng)
 # ==========================================
 def run_escape_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)["escape"]
     acc_st = get_account_state("escape", uid)
     
+    url_joined = "https://api.escapemaster.net/escape_game/my_joined"
+    url_enter = "https://api.escapemaster.net/escape_game/enter_room"
+    url_bet = "https://api.escapemaster.net/escape_game/bet"
+    
     while cfg["global_running"] and not acc_st["random_stop"].is_set():
         try:
-            url = "https://api.escapemaster.net/escape_game/my_joined"
-            resp = requests.get(url, params={"asset": cfg["asset_type"], "page": 1, "page_size": 10},
-                                headers={"user-id": str(uid), "user-secret-key": skey}, timeout=10)
+            headers_in = {"user-id": str(uid), "user-secret-key": skey}
+            resp = requests.get(url_joined, params={"asset": cfg["asset_type"], "page": 1, "page_size": 10}, headers=headers_in, timeout=10)
             data = resp.json()
             if data.get("code") == 0:
                 items = data.get("data", {}).get("items", [])
@@ -477,10 +479,11 @@ def run_escape_bot_engine(chat_id, uid, skey):
                         acc_st["total_bets"] += 1
                         room = random.randint(1, 8)
                         
-                        requests.post("https://api.escapemaster.net/escape_game/enter_room",
-                                      json={"asset_type": cfg["asset_type"], "user_id": uid, "room_id": room},
-                                      headers={"user-id": str(uid), "user-secret-key": skey, "content-type": "application/json"})
+                        headers_post = {"user-id": str(uid), "user-secret-key": skey, "content-type": "application/json"}
+                        
+                        payload_enter = {"asset_type": cfg["asset_type"], "user_id": uid, "room_id": room}
+                        requests.post(url_enter, json=payload_enter, headers=headers_post)
+                        
                         time.sleep(0.1)
-                        requests.post("https://api.escapemaster.net/escape_game/bet",
-                                      json={"asset_type": cfg["asset_type"], "user_id": uid, "room_id": room, "bet_amount": cfg["base_bet"]},
-                                     
+                        
+                        payload_bet = {"asset_type": cfg["asset_
