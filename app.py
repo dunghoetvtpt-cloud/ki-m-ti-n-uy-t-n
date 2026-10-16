@@ -22,6 +22,10 @@ def home():
 user_data = {}
 data_lock = Lock()
 
+# Quản lý trạng thái nhập key và xác thực của người dùng
+waiting_for_key_users = set()
+verified_users = set()
+
 def get_user_config(chat_id):
     with data_lock:
         if chat_id not in user_data:
@@ -63,10 +67,30 @@ def get_account_state(game_prefix, uid):
         }
     return account_threads[key]
 
-# --- MENU CHÍNH CHỌN GAME ---
+# --- MENU CHÍNH / XÁC THỰC KEY ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     chat_id = message.chat.id
+    
+    # Kiểm tra xem tài khoản đã xác thực bản quyền hay chưa
+    if chat_id not in verified_users:
+        msg_text = (
+            "🔒 *XWORLD LICENSE GATEWAY*\n"
+            "━━━━━━━━━━━━━━━━━━━\n"
+            "⚠️ Bạn cần có Key bản quyền để sử dụng bot.\n\n"
+            "👉 Vui lòng chọn thao tác bên dưới:"
+        )
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(
+            types.InlineKeyboardButton("🌐 Tới Trang Lấy Key", url="https://kiemtien.infy.click"),
+            types.InlineKeyboardButton("🔑 Nhập Key Kích Hoạt", callback_data="prompt_enter_key")
+        )
+        bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
+        return
+
+    show_main_game_menu(chat_id)
+
+def show_main_game_menu(chat_id, message_id=None):
     cfg = get_user_config(chat_id)
     cfg["waiting_for_link"] = None
     cfg["waiting_for_bet"] = None
@@ -81,7 +105,20 @@ def send_welcome(message):
         types.InlineKeyboardButton("🕹️ Vua Thoát Hiểm", callback_data="select_game_escape"),
         types.InlineKeyboardButton("🏃 Đua Tốc Độ", callback_data="select_game_sprint")
     )
+    if message_id:
+        try:
+            bot.edit_message_text(msg_text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
+            return
+        except:
+            pass
     bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda call: call.data == "prompt_enter_key")
+def callback_prompt_key(call):
+    chat_id = call.message.chat.id
+    waiting_for_key_users.add(chat_id)
+    bot.answer_callback_query(call.id)
+    bot.send_message(chat_id, "🔑 **Vui lòng nhập mã Key của bạn vào đây (Ví dụ: `XW-A1B2C3D4`):**", parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("select_game_"))
 def callback_select_game(call):
@@ -127,25 +164,8 @@ def show_game_menu(chat_id, message_id, game_type):
 @bot.callback_query_handler(func=lambda call: call.data == "back_to_main")
 def callback_back_main(call):
     chat_id = call.message.chat.id
-    cfg = get_user_config(chat_id)
-    cfg["waiting_for_link"] = None
-    cfg["waiting_for_bet"] = None
     bot.answer_callback_query(call.id)
-    
-    msg_text = (
-        "🎮 *XWORLD MULTI-GAME BOT*\n"
-        "━━━━━━━━━━━━━━━━━━━\n"
-        "📌 Vui lòng chọn tựa game bạn muốn auto:"
-    )
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        types.InlineKeyboardButton("🕹️ Vua Thoát Hiểm", callback_data="select_game_escape"),
-        types.InlineKeyboardButton("🏃 Đua Tốc Độ", callback_data="select_game_sprint")
-    )
-    try:
-        bot.edit_message_text(msg_text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-    except:
-        pass
+    show_main_game_menu(chat_id, call.message.message_id)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("game_"))
 def callback_game_actions(call):
@@ -228,6 +248,25 @@ def handle_text_messages(message):
     text = message.text.strip()
     cfg = get_user_config(chat_id)
     
+    # 1. Xử lý khi người dùng nhập key vào bot
+    if chat_id in waiting_for_key_users:
+        waiting_for_key_users.remove(chat_id)
+        api_url = f"https://kiemtien.infy.click/check_key.php?key={text}&telegram_id={chat_id}"
+        
+        try:
+            response = requests.get(api_url, timeout=10)
+            res_data = response.json()
+            
+            if res_data.get("status") == "success":
+                verified_users.add(chat_id)
+                bot.reply_to(message, f"🎉 {res_data.get('message')}\n\n👉 Mời bạn bấm `/start` để mở giao diện quản lý game!", parse_mode="Markdown")
+            else:
+                bot.reply_to(message, f"{res_data.get('message', '❌ Key không hợp lệ!')}\n\n👉 Bấm `/start` để thử lại.")
+        except Exception:
+            bot.reply_to(message, "❌ Không thể kết nối tới máy chủ xác thực. Vui lòng thử lại sau!")
+        return
+
+    # 2. Xử lý chờ dán link game
     game_target_link = cfg.get("waiting_for_link")
     if game_target_link:
         if "userId=" in text and "secretKey=" in text:
@@ -253,6 +292,7 @@ def handle_text_messages(message):
         bot.reply_to(message, "⚠️ Link không hợp lệ! Hãy dán đúng link game XWorld.")
         return
 
+    # 3. Xử lý nhập tiền cược
     game_target_bet = cfg.get("waiting_for_bet")
     if game_target_bet:
         try:
@@ -313,7 +353,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
         time.sleep(3)
 
 # ==========================================
-# ENGINE 2: ĐUA TỐC ĐỘ (LOGIC GỐC: CƯỢC NGAY BẮT ĐẦU VÁN)
+# ENGINE 2: ĐUA TỐC ĐỘ
 # ==========================================
 def run_sprint_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)["sprint"]
@@ -350,7 +390,6 @@ def run_sprint_bot_engine(chat_id, uid, skey):
                 time.sleep(3)
                 continue
 
-            # Xáo trộn mạnh 6 vận động viên và chọn ngẫu nhiên 3 con
             random.shuffle(athletes)
             chosen_athletes = random.sample(athletes, 3)
             chosen = [a["id"] for a in chosen_athletes]
@@ -358,7 +397,6 @@ def run_sprint_bot_engine(chat_id, uid, skey):
             each_bet = acc_st["current_build"].quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
             total_bet_amount = each_bet * Decimal(len(chosen))
 
-            # Bắn lệnh cược ngay lập tức khi phát hiện ván mới
             for aid in chosen:
                 payload = {
                     "issue_id": issue_id,
@@ -372,13 +410,11 @@ def run_sprint_bot_engine(chat_id, uid, skey):
 
             acc_st["total_bets"] += 1
 
-            # Chờ hết thời gian đếm ngược của ván đấu
             wait_time = int(expire) if isinstance(expire, (int, float)) else 50
             for _ in range(wait_time):
                 if not cfg["global_running"] or acc_st["random_stop"].is_set(): break
                 time.sleep(1)
 
-            # Lấy kết quả ván đấu
             winner = None
             for _ in range(30):
                 res_r = requests.get(f"{base_api}/sprint/issue_result?issue={issue_id}&asset={cfg['asset_type']}", headers=headers, timeout=10)
