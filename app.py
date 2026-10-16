@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import telebot
 from telebot import types
 import websocket
@@ -63,13 +62,13 @@ def send_welcome(message):
         running_accs = sum(1 for s in accs.values() if s["running"])
     
     msg_text = (
-        f"🎮 *XWORLD ESCAPE MASTER - BOT TỰ ĐỘNG*\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
+        "🎮 *XWORLD ESCAPE MASTER - BOT TỰ ĐỘNG*\n"
+        "━━━━━━━━━━━━━━━━━━━\n"
         f"📌 *Trạng thái:* Hệ thống đang sẵn sàng\n"
         f"👥 *Tổng số nick đã thêm:* `{total_accs}`\n"
         f"🟢 *Số nick đang chạy ngầm:* `{running_accs}`\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
-        f"👉 *Hướng dẫn:* Hãy dán trực tiếp **Link game XWorld** vào khung chat này để thêm nick mới!"
+        "━━━━━━━━━━━━━━━━━━━\n"
+        "👉 *Hướng dẫn:* Hãy dán trực tiếp **Link game XWorld** vào khung chat này để thêm nick mới!"
     )
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton("📋 Danh sách tài khoản & Quản lý", callback_data="btn_list_acc"))
@@ -95,7 +94,8 @@ def handle_link_messages(message):
             pass
     if not text.startswith("/"):
         bot.reply_to(message, "⚠️ Vui lòng dán đúng **Link game XWorld** chứa `userId` và `secretKey` để bot nhận diện tài khoản.")
-                @bot.callback_query_handler(func=lambda call: True)
+
+@bot.callback_query_handler(func=lambda call: True)
 def callback_inline(call):
     chat_id = call.message.chat.id
     data = call.data
@@ -148,7 +148,7 @@ def callback_inline(call):
             wr = (sess["wins"] / sess["total_bets"] * 100) if sess["total_bets"] > 0 else 0
             msg = (
                 f"📊 *THỐNG KÊ NICK `{uid}`*\n"
-                f"━━━━━━━━━━━━━━━━━━━\n"
+                "━━━━━━━━━━━━━━━━━━━\n"
                 f"Trạng thái: {'🟢 Đang chạy tự động' if sess['running'] else '🔴 Đang dừng'}\n"
                 f"Số dư ví: `{bal:.4f} {sess['asset_type']}`\n"
                 f"Tổng ván: `{sess['total_bets']}` | Thắng: `{sess['wins']}` | Thua: `{sess['losses']}` (WR: `{wr:.1f}%`)\n"
@@ -178,12 +178,12 @@ def show_account_management(chat_id, message_id, uid):
     status_str = "🟢 Đang chạy tự động 24/7" if sess["running"] else "🔴 Đang dừng"
     msg_text = (
         f"🎮 *QUẢN LÝ TÀI KHOẢN: `{uid}`*\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
+        "━━━━━━━━━━━━━━━━━━━\n"
         f"📌 *Trạng thái:* {status_str}\n"
         f"🪙 *Đồng cược:* `{sess['asset_type']}`\n"
         f"💵 *Mức cược hiện tại:* `{sess['base_bet']}`\n"
         f"📈 *Hệ số nhân:* `x{sess['multiplier']}`\n"
-        f"━━━━━━━━━━━━━━━━━━━"
+        "━━━━━━━━━━━━━━━━━━━"
     )
     markup = types.InlineKeyboardMarkup(row_width=2)
     btn_toggle = types.InlineKeyboardButton("🚀 Bật Chạy Tự Động" if not sess["running"] else "⏹️ Tắt Bot", callback_data=f"acc_{uid}_toggle")
@@ -207,13 +207,13 @@ def back_home(call):
         total_accs = len(accs)
         running_accs = sum(1 for s in accs.values() if s["running"])
     msg_text = (
-        f"🎮 *XWORLD ESCAPE MASTER - BOT TỰ ĐỘNG*\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
+        "🎮 *XWORLD ESCAPE MASTER - BOT TỰ ĐỘNG*\n"
+        "━━━━━━━━━━━━━━━━━━━\n"
         f"📌 *Trạng thái:* Hệ thống đang sẵn sàng\n"
         f"👥 *Tổng số nick đã thêm:* `{total_accs}`\n"
         f"🟢 *Số nick đang chạy ngầm:* `{running_accs}`\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
-        f"👉 Dán Link game XWorld vào khung chat để thêm nick mới!"
+        "━━━━━━━━━━━━━━━━━━━\n"
+        "👉 Dán Link game XWorld vào khung chat để thêm nick mới!"
     )
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton("📋 Danh sách tài khoản & Quản lý", callback_data="btn_list_acc"))
@@ -221,7 +221,8 @@ def back_home(call):
         bot.edit_message_text(msg_text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
     except Exception:
         pass
-    def get_headers(sess):
+
+def get_headers(sess):
     return {
         "Content-Type": "application/json",
         "user-id": str(sess["user_id"]),
@@ -338,7 +339,7 @@ def process_game_result(chat_id, sess, issue_id, is_killed, award, bet, killed_r
     wr = (sess["wins"] / sess["total_bets"] * 100) if sess["total_bets"] > 0 else 0
     msg = (
         f"🏁 *[NICK `{sess['user_id']}`] KẾT QUẢ PHIÊN #{issue_id}*\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
+        "━━━━━━━━━━━━━━━━━━━\n"
         f"Trạng thái: *{status_text}*\n"
         f"Phòng bẫy: `{killed_room}` | Chọn: `{my_room}`\n"
         f"Cược: `{bet:.4f}` | Thưởng: `{award:.4f}`\n"
@@ -451,4 +452,3 @@ if __name__ == "__main__":
     Thread(target=run_telebot_polling, daemon=True).start()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-    
