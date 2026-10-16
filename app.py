@@ -1,7 +1,8 @@
-#!/usr/init/env python3
+#!/usr/bin/env python3
 """
-ESCAPE MASTER ULTIMATE MULTI-ACCOUNT BOT - FINAL UI FIX
-=======================================================
+ESCAPE MASTER ULTIMATE MULTI-ACCOUNT BOT - FIXED SYNTAX
+======================================================
+- Sửa triệt để lỗi SyntaxError (try...except)
 - Giao diện menu /start trực quan, dễ thao tác
 - Hỗ trợ đa luồng nhiều tài khoản chạy song song độc lập
 - Cấu hình mốc cược: 3.8 (vô hạn), 10 (giới hạn 3 lần), 100, 1000, 10000 (vô hạn)
@@ -78,7 +79,7 @@ def send_welcome(message):
         f"👥 *Tổng số nick đã thêm:* `{total_accs}`\n"
         f"🟢 *Số nick đang chạy ngầm:* `{running_accs}`\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
-        f"👉 *Hướng dẫn:* Hãy dán trực tiếp **Link game XWorld** vào khung chat này để thêm nick mới, hoặc bấm quản lý bên dưới!"
+        f"👉 *Hướng dẫn:* Hãy dán trực tiếp **Link game XWorld** vào khung chat này để thêm nick mới!"
     )
     
     markup = types.InlineKeyboardMarkup(row_width=1)
@@ -107,7 +108,7 @@ def handle_link_messages(message):
                 
                 bot.reply_to(message, f"✅ **Thêm tài khoản thành công!**\n• User ID: `{uid}`\n\nHệ thống đã lưu. Bấm /start để mở bảng quản lý và bật chạy tự động.")
                 return
-        except:
+        except Exception:
             pass
             
     if not text.startswith("/"):
@@ -120,6 +121,9 @@ def callback_inline(call):
     
     if data == "btn_list_acc":
         show_accounts_list(chat_id, call.message.message_id)
+        
+    elif data == "btn_home":
+        back_home(call)
         
     elif data.startswith("acc_"):
         parts = data.split("_")
@@ -139,8 +143,10 @@ def callback_inline(call):
                 sess["running"] = False
                 sess["random_stop"].set()
                 if sess["ws_app"]:
-                    try: sess["ws_app"].close()
-                    except: pass
+                    try: 
+                        sess["ws_app"].close()
+                    except Exception: 
+                        pass
                 bot.answer_callback_query(call.id, f"⏹️ Đã dừng luồng nick {uid}!")
             show_account_management(chat_id, call.message.message_id, uid)
             
@@ -194,7 +200,7 @@ def show_accounts_list(chat_id, message_id):
         
     try:
         bot.edit_message_text("📋 *DANH SÁCH TÀI KHOẢN*\nBấm vào nick bên dưới để bật/tắt chạy tự động:", chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
-    except:
+    except Exception:
         pass
 
 def show_account_management(chat_id, message_id, uid):
@@ -225,10 +231,9 @@ def show_account_management(chat_id, message_id, uid):
     
     try:
         bot.edit_message_text(msg_text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
-    except:
+    except Exception:
         pass
 
-@bot.callback_query_handlers(func=lambda call: call.data == "btn_home")
 def back_home(call):
     chat_id = call.message.chat.id
     with manager_lock:
@@ -248,7 +253,7 @@ def back_home(call):
     markup.add(types.InlineKeyboardButton("📋 Danh sách tài khoản & Quản lý", callback_data="btn_list_acc"))
     try:
         bot.edit_message_text(msg_text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-    except:
+    except Exception:
         pass
 
 # API và Cơ chế chạy luồng độc lập
@@ -268,7 +273,7 @@ def api_call(sess, method, url, **kwargs):
         resp = session_req.request(method, url, headers=get_headers(sess), timeout=15, **kwargs)
         if resp.status_code == 200:
             return resp.json()
-    except:
+    except Exception:
         pass
     return {}
 
@@ -299,7 +304,7 @@ def get_balance(sess):
                     for item in items:
                         if isinstance(item, dict) and item.get("symbol") == sess["asset_type"]:
                             return float(item.get("balance", 0))
-    except:
+    except Exception:
         pass
     
     data = api_call(sess, "POST", "https://api.escapemaster.net/escape_game/get_user_asset",
@@ -327,7 +332,7 @@ def get_my_joined(sess, page=1):
         data = resp.json()
         if data.get("code") == 0:
             return data.get("data", {})
-    except:
+    except Exception:
         pass
     return {}
 
@@ -342,7 +347,7 @@ def start_random_rooms(sess):
                 session_req.post("https://api.escapemaster.net/escape_game/enter_room",
                                  json={"asset_type": sess["asset_type"], "user_id": sess["user_id"], "room_id": room_id},
                                  headers=get_headers(sess), timeout=2)
-            except:
+            except Exception:
                 pass
             time.sleep(0.2)
     Thread(target=api_loop, daemon=True).start()
@@ -450,7 +455,7 @@ def run_bot_engine(chat_id, user_id):
 
             elif msg_type == "notify_heartbeat":
                 ws.send(json.dumps({"msg_type": "heartbeat_ack"}))
-        except:
+        except Exception:
             pass
 
     def watchdog_monitor():
@@ -458,8 +463,10 @@ def run_bot_engine(chat_id, user_id):
             time.sleep(5)
             if time.time() - sess["watchdog_last_time"] > 360:
                 if sess["ws_app"]:
-                    try: sess["ws_app"].close()
-                    except: pass
+                    try: 
+                        sess["ws_app"].close()
+                    except Exception: 
+                        pass
                 sess["watchdog_last_time"] = time.time()
     Thread(target=watchdog_monitor, daemon=True).start()
 
@@ -472,11 +479,6 @@ def run_bot_engine(chat_id, user_id):
                     "msg_type": "handle_enter_game",
                     "asset_type": sess["asset_type"],
                     "user_id": sess["user_id"],
-                    "user_secret_key": sess["secret_Key"] if "secret_Key" in sess else sess["secret_key"]
+                    "user_secret_key": sess["secret_key"]
                 })),
-                on_message=on_message,
-                on_error=lambda w, e: None,
-                on_close=lambda w, c, m: None
-            )
-            sess["ws_app"] = ws
-   
+         
