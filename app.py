@@ -329,8 +329,6 @@ def stop_random_rooms(uid):
 def process_game_result(chat_id, cfg, uid, skey, issue_id, is_killed, award, bet, killed_room, my_room):
     stop_random_rooms(uid)
     acc_st = get_account_state(uid)
-    
-    # Đảm bảo reset trạng thái cược để vòng sau tự động chạy tiếp ngay lập tức
     acc_st["has_bet"] = False
     acc_st["betting_issue"] = None
     
@@ -347,11 +345,9 @@ def process_game_result(chat_id, cfg, uid, skey, issue_id, is_killed, award, bet
         if acc_st["consecutive_losses"] >= cfg["loss_threshold"]:
             acc_st["skips_left"] = cfg["skip_rounds"]
             acc_st["consecutive_losses"] = 0
-            
     acc_st["total_profit"] += profit
     bal = get_balance(cfg, uid, skey)
     wr = (acc_st["wins"] / acc_st["total_bets"] * 100) if acc_st["total_bets"] > 0 else 0
-    
     msg = (
         f"🏁 *[NICK `{uid}`] KẾT QUẢ PHIÊN #{issue_id}*\n"
         f"Trạng thái: *{status_text}*\n"
@@ -362,11 +358,69 @@ def process_game_result(chat_id, cfg, uid, skey, issue_id, is_killed, award, bet
     )
     bot.send_message(chat_id, msg, parse_mode="Markdown")
 
+def execute_auto_bet(chat_id, uid, skey, issue_id, count_down):
+    acc_st = get_account_state(uid)
+    cfg = get_user_config(chat_id)
+    
+    if acc_st["current_issue"] != issue_id:
+        acc_st["current_issue"] = issue_id
+        acc_st["has_bet"] = False
+        
+        if acc_st["skips_left"] > 0:
+            acc_st["skips_left"] -= 1
+            return
+            
+        room = random.randint(1, 8)
+        amount = cfg["base_bet"]
+        
+        if enter_room(cfg, uid, skey, room):
+            time.sleep(0.2)
+            if place_bet(cfg, uid, skey, room, amount):
+                acc_st["has_bet"] = True
+                acc_st["betting_issue"] = issue_id
+                acc_st["watchdog_last_time"] = time.time()
+                start_random_rooms(cfg, uid, skey)
+                
+                def check_api_backup():
+                    time.sleep(max(count_down, 5) + 3)
+                    if acc_st["has_bet"] and acc_st["betting_issue"] == issue_id:
+                        res_data = get_my_joined(uid, skey, cfg["asset_type"], 1)
+                        items = res_data.get("items", [])
+                        for item in items:
+                            if str(item.get("issue_id")) == str(issue_id):
+                                award = float(item.get("award_amount", 0))
+                                bet_amt = float(item.get("bet_amount", 0))
+                                is_killed = not (award > bet_amt)
+                                kr = item.get("killed_room_id", "?")
+                                mr = item.get("room_id", "?")
+                                process_game_result(chat_id, cfg, uid, skey, issue_id, is_killed, award, bet_amt, kr, mr)
+                                return
+                        acc_st["has_bet"] = False
+                Thread(target=check_api_backup, daemon=True).start()
+
 def run_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)
     acc_st = get_account_state(uid)
     ws_url = "wss://api.escapemaster.net/escape_master/ws"
     
+    # Kích hoạt thêm một luồng dự phòng (Backup Loop) kiểm tra trạng thái mỗi 12 giây
+    def self_healing_loop():
+        while cfg["global_running"]:
+            time.sleep(12)
+            if not acc_st["has_bet"]:
+                try:
+                    res_data = get_my_joined(uid, skey, cfg["asset_type"], 1)
+                    items = res_data.get("items", [])
+                    if items:
+                        latest = items[0]
+                        latest_issue = str(latest.get("issue_id"))
+                        # Nếu ván mới ra mà bot chưa cược thì tự động ép cược luôn
+                        if acc_st["current_issue"] != latest_issue and not acc_st["has_bet"]:
+                            execute_auto_bet(chat_id, uid, skey, latest_issue, 15)
+                except Exception:
+                    pass
+    Thread(target=self_healing_loop, daemon=True).start()
+
     def on_message(ws, message):
         if not cfg["global_running"]:
             ws.close()
@@ -376,50 +430,13 @@ def run_bot_engine(chat_id, uid, skey):
             msg_type = data.get("msg_type", "")
             
             if msg_type == "notify_count_down":
-                issue_id = data.get("issue_id")
+                issue_id = str(data.get("issue_id"))
                 count_down = data.get("count_down", 0)
-                
-                # Cứ sang phiên mới là cho phép đặt cược ngay lập tức, tự động hoàn toàn
-                if acc_st["current_issue"] != issue_id:
-                    acc_st["current_issue"] = issue_id
-                    acc_st["has_bet"] = False
-                    
-                    if acc_st["skips_left"] > 0:
-                        acc_st["skips_left"] -= 1
-                        return
-                        
-                    room = random.randint(1, 8)
-                    amount = cfg["base_bet"]
-                    
-                    if enter_room(cfg, uid, skey, room):
-                        time.sleep(0.2)
-                        if place_bet(cfg, uid, skey, room, amount):
-                            acc_st["has_bet"] = True
-                            acc_st["betting_issue"] = issue_id
-                            acc_st["watchdog_last_time"] = time.time()
-                            start_random_rooms(cfg, uid, skey)
-                            
-                            def check_api_backup():
-                                time.sleep(max(count_down, 5) + 3)
-                                if acc_st["has_bet"] and acc_st["betting_issue"] == issue_id:
-                                    res_data = get_my_joined(uid, skey, cfg["asset_type"], 1)
-                                    items = res_data.get("items", [])
-                                    for item in items:
-                                        if str(item.get("issue_id")) == str(issue_id):
-                                            award = float(item.get("award_amount", 0))
-                                            bet_amt = float(item.get("bet_amount", 0))
-                                            is_killed = not (award > bet_amt)
-                                            kr = item.get("killed_room_id", "?")
-                                            mr = item.get("room_id", "?")
-                                            process_game_result(chat_id, cfg, uid, skey, issue_id, is_killed, award, bet_amt, kr, mr)
-                                            return
-                                    # Fallback tự động reset cờ nếu không thấy trong API để tránh bị kẹt vĩnh viễn
-                                    acc_st["has_bet"] = False
-                            Thread(target=check_api_backup, daemon=True).start()
+                execute_auto_bet(chat_id, uid, skey, issue_id, count_down)
 
             elif msg_type == "notify_result":
-                issue_id = data.get("issue_id")
-                if acc_st["has_bet"] and issue_id == acc_st["betting_issue"]:
+                issue_id = str(data.get("issue_id"))
+                if acc_st["has_bet"] and issue_id == str(acc_st["betting_issue"]):
                     award = float(data.get("award_amount", 0))
                     bet_val = float(data.get("bet_amount", 0))
                     is_killed = not (award > bet_val)
@@ -435,8 +452,8 @@ def run_bot_engine(chat_id, uid, skey):
     def watchdog_monitor():
         while cfg["global_running"]:
             time.sleep(5)
-            if time.time() - acc_st["watchdog_last_time"] > 300:
-                acc_st["has_bet"] = False  # Reset chống kẹt cờ khi mất kết nối lâu
+            if time.time() - acc_st["watchdog_last_time"] > 180:
+                acc_st["has_bet"] = False
                 if acc_st["ws_app"]:
                     try:
                         acc_st["ws_app"].close()
@@ -460,17 +477,4 @@ def run_bot_engine(chat_id, uid, skey):
                 on_error=lambda w, e: None,
                 on_close=lambda w, c, m: None
             )
-            acc_st["ws_app"] = ws
-            ws.run_forever(ping_interval=15, ping_timeout=10)
-        except Exception:
-            pass
-        time.sleep(3)
-
-def run_telebot_polling():
-    try:
-        bot.remove_webhook()
-    except Exception:
-        pass
-    bot.infinity_polling(timeout=10, long_polling_timeout=5)
-
-if __name__ == "
+       
