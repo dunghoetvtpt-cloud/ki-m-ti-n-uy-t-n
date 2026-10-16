@@ -28,7 +28,7 @@ def get_user_config(chat_id):
             user_data[chat_id] = {
                 "active_game": None,
                 "waiting_for_link": None,
-                "waiting_for_bet": None, # Trạng thái chờ nhập tiền cược
+                "waiting_for_bet": None,
                 "escape": {
                     "accounts": {},
                     "global_running": False,
@@ -167,7 +167,7 @@ def callback_game_actions(call):
         cfg["waiting_for_bet"] = game_type
         cfg["waiting_for_link"] = None
         bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, f"✏️ **Vui lòng nhập số tiền cược mới cho [ {game_type.upper()} ]:**\n*(Ví dụ: 1, 5, 10.5, 100)*")
+        bot.send_message(chat_id, f"✏️ **Vui lòng nhập số tiền cược mới cho [ {game_type.upper()} ] (Mỗi con):**\n*(Ví dụ: 1, 5, 10.5, 100)*")
         
     elif action == "toggle_bot":
         if not g_cfg["accounts"]:
@@ -266,7 +266,6 @@ def handle_text_messages(message):
             g_cfg = cfg[game_target_bet]
             if game_target_bet == "sprint":
                 g_cfg["bet_amount_total"] = str(val)
-                # Cập nhật luôn cho các thread đang chạy
                 for uid in g_cfg["accounts"]:
                     st = get_account_state("sprint", uid)
                     st["current_build"] = Decimal(str(val))
@@ -274,10 +273,10 @@ def handle_text_messages(message):
                 g_cfg["base_bet"] = val
                 
             cfg["waiting_for_bet"] = None
-            bot.reply_to(message, f"✅ **Đã cập nhật mức cược mới thành công:** `{val}`\nGõ `/start` để mở lại menu.")
+            bot.reply_to(message, f"✅ **Đã cập nhật mức cược mới thành công:** `{val}` (Mỗi con)\nGõ `/start` để mở lại menu.")
             return
         except ValueError:
-            bot.reply_to(message, "⚠️ Số tiền không hợp lệ! Vui lòng nhập một số dương (ví dụ: `10` hoặc `5.5`).")
+            bot.reply_to(message, "⚠️ Số tiền không hợp lệ! Vول lòng nhập một số dương (ví dụ: `1` hoặc `5.5`).")
             return
 
     if not text.startswith("/"):
@@ -317,7 +316,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
         time.sleep(3)
 
 # ==========================================
-# ENGINE 2: SPRINT RUN (CHẠY ĐUA TỐC ĐỘ)
+# ENGINE 2: SPRINT RUN (MỖI CON ĐỦ SỐ TIỀN NHẬP)
 # ==========================================
 def run_sprint_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)["sprint"]
@@ -339,12 +338,10 @@ def run_sprint_bot_engine(chat_id, uid, skey):
 
     while cfg["global_running"] and not acc_st["random_stop"].is_set():
         try:
-            # Đồng bộ lại mức cược mới nhất từ config người dùng
             base_build = Decimal(str(cfg["bet_amount_total"]))
             if acc_st["current_build"] == Decimal("1") and base_build != Decimal("1"):
                 acc_st["current_build"] = base_build
 
-            # Check Rest Mode nếu thua đến giới hạn
             if acc_st["streak_loss"] >= cfg["lose_limit"]:
                 for _ in range(cfg["rest_rounds"]):
                     if not cfg["global_running"] or acc_st["random_stop"].is_set(): break
@@ -352,7 +349,6 @@ def run_sprint_bot_engine(chat_id, uid, skey):
                 acc_st["streak_loss"] = 0
                 continue
 
-            # Lấy thông tin phiên mới
             r = requests.get(f"{base_api}/sprint/home?asset={cfg['asset_type']}", headers=headers, timeout=10)
             if r.status_code != 200:
                 time.sleep(3)
@@ -367,15 +363,13 @@ def run_sprint_bot_engine(chat_id, uid, skey):
                 time.sleep(3)
                 continue
 
-            # Chọn ngẫu nhiên 3 vận động viên
             chosen_athletes = random.sample(athletes, 3)
             chosen = [a["id"] for a in chosen_athletes]
 
-            current_build = acc_st["current_build"]
-            each_bet = (current_build / Decimal(len(chosen))).quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
+            # MỖI CON nhận chính xác số tiền user nhập (không chia 3 nữa)
+            each_bet = acc_st["current_build"].quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
             total_bet_amount = each_bet * Decimal(len(chosen))
 
-            # Gửi lệnh cược cho từng VĐV
             for aid in chosen:
                 payload = {
                     "issue_id": issue_id,
@@ -389,13 +383,11 @@ def run_sprint_bot_engine(chat_id, uid, skey):
 
             acc_st["total_bets"] += 1
 
-            # Đợi hết thời gian phiên
             wait_time = int(expire) if isinstance(expire, (int, float)) else 50
             for _ in range(wait_time):
                 if not cfg["global_running"] or acc_st["random_stop"].is_set(): break
                 time.sleep(1)
 
-            # Lấy kết quả ván đấu
             winner = None
             for _ in range(30):
                 res_r = requests.get(f"{base_api}/sprint/issue_result?issue={issue_id}&asset={cfg['asset_type']}", headers=headers, timeout=10)
@@ -406,18 +398,16 @@ def run_sprint_bot_engine(chat_id, uid, skey):
                         break
                 time.sleep(1)
 
-            # Xử lý Thắng / Thua
             if winner in chosen:
                 profit = (each_bet * 5) - total_bet_amount
                 acc_st["total_profit"] += profit
                 acc_st["wins"] += 1
                 acc_st["streak_loss"] = 0
-                acc_st["current_build"] = base_build # Reset về mức cược gốc khi thắng
+                acc_st["current_build"] = base_build
             else:
                 acc_st["total_profit"] -= total_bet_amount
                 acc_st["losses"] += 1
                 acc_st["streak_loss"] += 1
-                # Nhân hệ số khi thua
                 acc_st["current_build"] = (acc_st["current_build"] * lose_multiplier).quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
 
         except:
