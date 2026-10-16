@@ -80,7 +80,6 @@ def generate_key():
     db.commit()
     db.close()
     
-    # Tự động lấy chuẩn domain hiện tại đang truy cập
     base_url = request.host_url.rstrip('/')
     raw_destination = f"{base_url}/get_key_page?key={license_key}"
     
@@ -140,20 +139,55 @@ def check_key():
     return jsonify({"status": "success", "message": "🎉 Kích hoạt thành công!"})
 
 
-# --- TELEGRAM BOT LOGIC ---
+# --- TELEGRAM BOT & GAME LOGIC ---
 user_data = {}
 data_lock = Lock()
 waiting_for_key_users = set()
 verified_users = set()
 
+def get_user_config(chat_id):
+    with data_lock:
+        if chat_id not in user_data:
+            user_data[chat_id] = {
+                "active_game": None,
+                "waiting_for_link": None,
+                "waiting_for_bet": None,
+                "escape": {
+                    "accounts": {},
+                    "global_running": False,
+                    "asset_type": "BUILD",
+                    "base_bet": 10.0,
+                },
+                "sprint": {
+                    "accounts": {},
+                    "global_running": False,
+                    "asset_type": "BUILD",
+                    "bet_amount_total": "1",
+                }
+            }
+        return user_data[chat_id]
+
+account_threads = {}
+
+def get_account_state(game_prefix, uid):
+    key = f"{game_prefix}_{uid}"
+    if key not in account_threads:
+        account_threads[key] = {
+            "total_profit": Decimal("0"),
+            "total_bets": 0,
+            "wins": 0,
+            "losses": 0,
+            "current_build": Decimal("1"),
+            "random_stop": Event()
+        }
+    return account_threads[key]
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     chat_id = message.chat.id
     if chat_id not in verified_users:
-        # Lấy trực tiếp từ webhook hoặc link động mặc định của Render app URL
         render_domain = os.environ.get("RENDER_EXTERNAL_URL", "https://bot-tool-golike.onrender.com")
         generate_url = f"{render_domain}/generate"
-        
         msg_text = (
             "🔒 *XWORLD LICENSE GATEWAY*\n"
             "━━━━━━━━━━━━━━━━━━━\n"
@@ -170,7 +204,15 @@ def send_welcome(message):
     show_main_game_menu(chat_id)
 
 def show_main_game_menu(chat_id, message_id=None):
-    msg_text = "🎮 *XWORLD MULTI-GAME BOT*\n━━━━━━━━━━━━━━━━━━━\n📌 Vui lòng chọn tựa game bạn muốn auto:"
+    cfg = get_user_config(chat_id)
+    cfg["waiting_for_link"] = None
+    cfg["waiting_for_bet"] = None
+    
+    msg_text = (
+        "🎮 *XWORLD MULTI-GAME BOT*\n"
+        "━━━━━━━━━━━━━━━━━━━\n"
+        "📌 Vui lòng chọn tựa game bạn muốn auto:"
+    )
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
         types.InlineKeyboardButton("🕹️ Vua Thoát Hiểm", callback_data="select_game_escape"),
@@ -189,13 +231,137 @@ def callback_prompt_key(call):
     chat_id = call.message.chat.id
     waiting_for_key_users.add(chat_id)
     bot.answer_callback_query(call.id)
-    bot.send_message(chat_id, "🔑 **Vui lòng nhập mã Key của bạn vào đây:**", parse_mode="Markdown")
+    bot.send_message(chat_id, "🔑 **Vui lòng nhập mã Key của bạn vào đây (Ví dụ: `XW-A1B2C3D4`):**", parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("select_game_"))
+def callback_select_game(call):
+    chat_id = call.message.chat.id
+    cfg = get_user_config(chat_id)
+    game_type = call.data.split("_")[2]
+    cfg["active_game"] = game_type
+    bot.answer_callback_query(call.id)
+    show_game_menu(chat_id, call.message.message_id, game_type)
+
+def show_game_menu(chat_id, message_id, game_type):
+    cfg = get_user_config(chat_id)
+    g_cfg = cfg[game_type]
+    game_name = "Vua Thoát Hiểm" if game_type == "escape" else "Đua Tốc Độ"
+    status_str = "🟢 Đang chạy" if g_cfg["global_running"] else "🔴 Đang dừng"
+    total_accs = len(g_cfg["accounts"])
+    current_bet_display = g_cfg.get('bet_amount_total') if game_type == 'sprint' else g_cfg.get('base_bet')
+    
+    msg_text = (
+        f"🎮 *GAME: {game_name.upper()}*\n"
+        "━━━━━━━━━━━━━━━━━━━\n"
+        f"📌 *Trạng thái:* {status_str}\n"
+        f"👥 *Số nick:* `{total_accs}`\n"
+        f"🪙 *Coin:* `{g_cfg['asset_type']}` | 💵 *Cược:* `{current_bet_display}` (Mỗi con)\n"
+        "━━━━━━━━━━━━━━━━━━━\n"
+        "👇 *Chọn thao tác bên dưới:*"
+    )
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("⚙️ Thêm Link Nick", callback_data=f"game_{game_type}_setup_link"),
+        types.InlineKeyboardButton("🚀 Bật Auto" if not g_cfg["global_running"] else "⏹️ Tắt Bot", callback_data=f"game_{game_type}_toggle_bot"),
+        types.InlineKeyboardButton(f"🪙 Đổi Coin ({g_cfg['asset_type']})", callback_data=f"game_{game_type}_toggle_asset"),
+        types.InlineKeyboardButton("✏️ Nhập Số Tiền Cược", callback_data=f"game_{game_type}_input_bet"),
+        types.InlineKeyboardButton("👥 Danh sách Nick", callback_data=f"game_{game_type}_list"),
+        types.InlineKeyboardButton("📊 Thống kê", callback_data=f"game_{game_type}_status"),
+        types.InlineKeyboardButton("🔙 Quay lại chọn Game", callback_data="back_to_main")
+    )
+    try:
+        bot.edit_message_text(msg_text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
+    except:
+        bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
+
+@bot.callback_query_handler(func=lambda call: call.data == "back_to_main")
+def callback_back_main(call):
+    chat_id = call.message.chat.id
+    bot.answer_callback_query(call.id)
+    show_main_game_menu(chat_id, call.message.message_id)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("game_"))
+def callback_game_actions(call):
+    chat_id = call.message.chat.id
+    cfg = get_user_config(chat_id)
+    parts = call.data.split("_")
+    game_type = parts[1]
+    action = "_".join(parts[2:])
+    g_cfg = cfg[game_type]
+    game_name_vi = "Vua Thoát Hiểm" if game_type == "escape" else "Đua Tốc Độ"
+    
+    if action == "setup_link":
+        cfg["waiting_for_link"] = game_type
+        cfg["waiting_for_bet"] = None
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, f"📥 **Vui lòng dán link game [ {game_name_vi} ] vào đây!**")
+        
+    elif action == "input_bet":
+        cfg["waiting_for_bet"] = game_type
+        cfg["waiting_for_link"] = None
+        bot.answer_callback_query(call.id)
+        bot.send_message(chat_id, f"✏️ **Vui lòng nhập số tiền cược cố định cho [ {game_name_vi} ] (Mỗi con):**")
+        
+    elif action == "toggle_bot":
+        if not g_cfg["accounts"]:
+            bot.answer_callback_query(call.id, "⚠️ Chưa có nick nào cho game này!", show_alert=True)
+            return
+        if not g_cfg["global_running"]:
+            g_cfg["global_running"] = True
+            for uid, skey in g_cfg["accounts"].items():
+                st = get_account_state(game_type, uid)
+                st["random_stop"].clear()
+                if game_type == "escape":
+                    Thread(target=run_escape_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
+                else:
+                    Thread(target=run_sprint_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
+            bot.answer_callback_query(call.id, f"🚀 Đã bật auto {game_name_vi}!")
+        else:
+            g_cfg["global_running"] = False
+            for uid in g_cfg["accounts"]:
+                acc_st = get_account_state(game_type, uid)
+                acc_st["random_stop"].set()
+            bot.answer_callback_query(call.id, "⏹️ Đã dừng bot!")
+        show_game_menu(chat_id, call.message.message_id, game_type)
+        
+    elif action == "toggle_asset":
+        g_cfg["asset_type"] = "USDT" if g_cfg["asset_type"] == "BUILD" else "BUILD"
+        bot.answer_callback_query(call.id, f"Đổi sang {g_cfg['asset_type']}")
+        show_game_menu(chat_id, call.message.message_id, game_type)
+        
+    elif action == "list":
+        if not g_cfg["accounts"]:
+            bot.answer_callback_query(call.id, "Chưa có nick nào!", show_alert=True)
+            return
+        msg = f"👥 *DANH SÁCH NICK ({game_name_vi.upper()}):*\n"
+        for idx, uid in enumerate(g_cfg["accounts"].keys(), 1):
+            msg += f"{idx}. `{uid}`\n"
+        bot.send_message(chat_id, msg, parse_mode="Markdown")
+        
+    elif action == "status":
+        tot_bets, tot_wins, tot_losses, tot_profit = 0, 0, 0, Decimal("0")
+        for uid in g_cfg["accounts"]:
+            st = get_account_state(game_type, uid)
+            tot_bets += st["total_bets"]
+            tot_wins += st["wins"]
+            tot_losses += st["losses"]
+            tot_profit += st["total_profit"]
+        wr = (tot_wins / tot_bets * 100) if tot_bets > 0 else 0
+        msg = (
+            f"📊 *THỐNG KÊ {game_name_vi.upper()}*\n"
+            f"Trạng thái: {'🟢 Đang chạy' if g_cfg['global_running'] else '🔴 Đang dừng'}\n"
+            f"Tổng ván: `{tot_bets}` | Thắng/Thua: `{tot_wins}`/`{tot_losses}` ({wr:.1f}%)\n"
+            f"Tổng lời: `{tot_profit:+.4f} {g_cfg['asset_type']}`"
+        )
+        bot.send_message(chat_id, msg, parse_mode="Markdown")
 
 @bot.message_handler(func=lambda message: True)
 def handle_text_messages(message):
     chat_id = message.chat.id
     text = message.text.strip()
+    cfg = get_user_config(chat_id)
     
+    # 1. Xử lý nhập key
     if chat_id in waiting_for_key_users:
         waiting_for_key_users.remove(chat_id)
         local_api_url = f"http://127.0.0.1:{os.environ.get('PORT', 5000)}/check_key?key={text}&telegram_id={chat_id}"
@@ -210,21 +376,108 @@ def handle_text_messages(message):
             bot.reply_to(message, f"❌ Lỗi xác thực: `{str(e)}`", parse_mode="Markdown")
         return
 
+    # 2. Xử lý dán link game
+    game_target_link = cfg.get("waiting_for_link")
+    if game_target_link:
+        if "userId=" in text and "secretKey=" in text:
+            try:
+                parsed_url = urlparse(text)
+                query_params = parse_qs(parsed_url.query)
+                uid_str = query_params.get("userId", [None])[0]
+                skey = query_params.get("secretKey", [None])[0]
+                if uid_str and skey:
+                    uid = int(uid_str)
+                    cfg[game_target_link]["accounts"][uid] = skey
+                    cfg["waiting_for_link"] = None
+                    g_cfg = cfg[game_target_link]
+                    if g_cfg["global_running"]:
+                        if game_target_link == "escape":
+                            Thread(target=run_escape_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
+                        else:
+                            Thread(target=run_sprint_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
+                    bot.reply_to(message, f"✅ **Đã thêm nick thành công!**\nGõ `/start` để quay lại quản lý.")
+                    return
+            except:
+                pass
+        bot.reply_to(message, "⚠️ Link không hợp lệ! Hãy dán đúng link game XWorld.")
+        return
+
+    # 3. Xử lý nhập tiền cược
+    game_target_bet = cfg.get("waiting_for_bet")
+    if game_target_bet:
+        try:
+            val = float(text)
+            if val <= 0:
+                raise ValueError()
+            g_cfg = cfg[game_target_bet]
+            if game_target_bet == "sprint":
+                g_cfg["bet_amount_total"] = str(val)
+                for uid in g_cfg["accounts"]:
+                    st = get_account_state("sprint", uid)
+                    st["current_build"] = Decimal(str(val))
+            else:
+                g_cfg["base_bet"] = val
+            cfg["waiting_for_bet"] = None
+            bot.reply_to(message, f"✅ **Đã cập nhật mức cược:** `{val}`\nGõ `/start` để mở lại menu.")
+            return
+        except ValueError:
+            bot.reply_to(message, "⚠️ Số tiền không hợp lệ! Vui lòng nhập số dương.")
+            return
+
     if not text.startswith("/"):
         bot.reply_to(message, "💡 Gõ `/start` để mở bảng chọn game.")
 
-def run_telebot():
-    while True:
+# ==========================================
+# ENGINE 1: VUA THOÁT HIỂM
+# ==========================================
+def run_escape_bot_engine(chat_id, uid, skey):
+    cfg = get_user_config(chat_id)["escape"]
+    acc_st = get_account_state("escape", uid)
+    while cfg["global_running"] and not acc_st["random_stop"].is_set():
         try:
-            bot.remove_webhook()
-            bot.infinity_polling(timeout=10, long_polling_timeout=5)
-        except Exception as e:
-            print(f"Bot polling error: {e}")
-            time.sleep(3)
+            url = "https://api.escapemaster.net/escape_game/my_joined"
+            resp = requests.get(url, params={"asset": cfg["asset_type"], "page": 1, "page_size": 10},
+                                headers={"user-id": str(uid), "user-secret-key": skey}, timeout=10)
+            data = resp.json()
+            if data.get("code") == 0:
+                items = data.get("data", {}).get("items", [])
+                if items:
+                    latest_issue = str(items[0].get("issue_id"))
+                    if acc_st.get("current_issue") != latest_issue:
+                        acc_st["current_issue"] = latest_issue
+                        acc_st["total_bets"] += 1
+                        room = random.randint(1, 8)
+                        requests.post("https://api.escapemaster.net/escape_game/enter_room",
+                                      json={"asset_type": cfg["asset_type"], "user_id": uid, "room_id": room},
+                                      headers={"user-id": str(uid), "user-secret-key": skey, "content-type": "application/json"})
+                        time.sleep(0.1)
+                        requests.post("https://api.escapemaster.net/escape_game/bet",
+                                      json={"asset_type": cfg["asset_type"], "user_id": uid, "room_id": room, "bet_amount": cfg["base_bet"]},
+                                      headers={"user-id": str(uid), "user-secret-key": skey, "content-type": "application/json"})
+        except:
+            pass
+        time.sleep(3)
 
-if __name__ == "__main__":
-    bot_thread = Thread(target=run_telebot, daemon=True)
-    bot_thread.start()
+# ==========================================
+# ENGINE 2: ĐUA TỐC ĐỘ
+# ==========================================
+def run_sprint_bot_engine(chat_id, uid, skey):
+    cfg = get_user_config(chat_id)["sprint"]
+    acc_st = get_account_state("sprint", uid)
+    base_api = "https://api.sprintrun.win"
+    headers = {
+        "accept": "*/*",
+        "content-type": "application/json",
+        "origin": "https://sprintrun.win",
+        "referer": "https://sprintrun.win/",
+        "user-agent": "Mozilla/5.0",
+        "user-id": str(uid),
+        "user-login": "login_v2",
+        "user-secret-key": skey
+    }
+    while cfg["global_running"] and not acc_st["random_stop"].is_set():
+        try:
+            base_build = Decimal(str(cfg["bet_amount_total"]))
+            acc_st["current_build"] = base_build
+
     
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
