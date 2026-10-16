@@ -161,7 +161,8 @@ def get_user_config(chat_id):
 def send_welcome(message):
     chat_id = message.chat.id
     if chat_id not in verified_users:
-        render_domain = "https://bot-tool-golike.onrender.com" # Hoặc domain Render của ông
+        # Đã trỏ thẳng vào /generate để qua trang lấy key chuẩn xác
+        render_domain = "https://bot-tool-golike.onrender.com/generate"
         msg_text = (
             "🔒 *XWORLD LICENSE GATEWAY*\n"
             "━━━━━━━━━━━━━━━━━━━\n"
@@ -232,7 +233,6 @@ def run_telebot():
             time.sleep(3)
 
 if __name__ == "__main__":
-    # Chạy bot ở một luồng riêng biệt cực kỳ ổn định
     bot_thread = Thread(target=run_telebot, daemon=True)
     bot_thread.start()
     
