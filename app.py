@@ -59,7 +59,7 @@ def get_account_state(game_prefix, uid):
             "losses": 0,
             "streak_loss": 0,
             "current_build": Decimal("1"),
-            "history_winners": [], # Lưu lịch sử các con vô địch gần nhất để phân tích
+            "history_winners": [],
             "random_stop": Event()
         }
     return account_threads[key]
@@ -314,7 +314,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
         time.sleep(3)
 
 # ==========================================
-# ENGINE 2: ĐUA TỐC ĐỘ (CÓ PHÂN TÍCH LỊCH SỬ VÀ CỐ ĐỊNH VỐN)
+# ENGINE 2: ĐUA TỐC ĐỘ (CANH SÁT NÚT GIÂY CUỐI ĐỂ CƯỢC)
 # ==========================================
 def run_sprint_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)["sprint"]
@@ -351,17 +351,26 @@ def run_sprint_bot_engine(chat_id, uid, skey):
                 time.sleep(3)
                 continue
 
-            # --- CHIẾN THUẬT PHÂN TÍCH LỊCH SỬ ---
-            # Ưu tiên chọn các con có xu hướng ra hoặc pha trộn dựa trên lịch sử gần đây (history_winners)
+            # --- TÍNH TOÁN CANH GIÂY CUỐI ---
+            # Chờ gần hết thời gian ván đấu, chỉ để lại khoảng 2-3 giây cuối cùng trước khi chốt đơn
+            wait_target = float(expire) - 2.5
+            if wait_target > 0:
+                time.sleep(wait_target)
+
+            # Kiểm tra lại thông tin ván mới nhất cận sát giờ cược để lấy danh sách chuẩn
+            r_check = requests.get(f"{base_api}/sprint/home?asset={cfg['asset_type']}", headers=headers, timeout=5)
+            if r_check.status_code == 200:
+                latest_data = r_check.json().get("data", {})
+                current_issue = latest_data.get("issue_id")
+                if current_issue == issue_id:
+                    athletes = latest_data.get("athlete_list", athletes)
+
+            # Phân tích lịch sử và xáo trộn chọn 3 con sát giờ
             history = acc_st["history_winners"]
             if history:
-                # Sắp xếp các vận động viên ưu tiên con nào xuất hiện ít trong lịch sử gần đây (bắt nhịp cầu lót)
-                # hoặc kết hợp ngẫu nhiên có lọc lịch sử để tối ưu tỉ lệ thắng
                 athletes_sorted = sorted(athletes, key=lambda a: history.count(a["id"]))
-                # Lấy một nửa từ nhóm ít ra và một nửa ngẫu nhiên để tạo sự cân bằng thông minh
                 chosen_athletes = random.sample(athletes_sorted[:4], min(3, len(athletes_sorted)))
             else:
-                # Nếu chưa có lịch sử thì xáo trộn ngẫu nhiên bình thường
                 random.shuffle(athletes)
                 chosen_athletes = random.sample(athletes, 3)
 
@@ -370,6 +379,7 @@ def run_sprint_bot_engine(chat_id, uid, skey):
             each_bet = acc_st["current_build"].quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
             total_bet_amount = each_bet * Decimal(len(chosen))
 
+            # Bắn lệnh cược dồn dập cực nhanh ở những giây cuối
             for aid in chosen:
                 payload = {
                     "issue_id": issue_id,
@@ -378,24 +388,21 @@ def run_sprint_bot_engine(chat_id, uid, skey):
                     "athlete_id": aid,
                     "bet_amount": float(each_bet)
                 }
-                requests.post(f"{base_api}/sprint/bet", json=payload, headers=headers, timeout=10)
-                time.sleep(0.2)
+                requests.post(f"{base_api}/sprint/bet", json=payload, headers=headers, timeout=5)
+                time.sleep(0.05)
 
             acc_st["total_bets"] += 1
 
-            wait_time = int(expire) if isinstance(expire, (int, float)) else 50
-            for _ in range(wait_time):
-                if not cfg["global_running"] or acc_st["random_stop"].is_set(): break
-                time.sleep(1)
+            # Chờ thêm phần thời gian còn lại để lấy kết quả
+            time.sleep(3)
 
             winner = None
-            for _ in range(30):
+            for _ in range(15):
                 res_r = requests.get(f"{base_api}/sprint/issue_result?issue={issue_id}&asset={cfg['asset_type']}", headers=headers, timeout=10)
                 if res_r.status_code == 200:
                     rank = res_r.json().get("data", {}).get("athlete_rank", [])
                     if rank:
                         winner = rank[0]
-                        # Cập nhật lịch sử quán quân (giữ tối đa 10 ván gần nhất)
                         acc_st["history_winners"].append(winner)
                         if len(acc_st["history_winners"]) > 10:
                             acc_st["history_winners"].pop(0)
