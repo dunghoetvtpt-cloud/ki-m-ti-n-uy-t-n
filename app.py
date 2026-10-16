@@ -42,9 +42,13 @@ def get_db():
 @app.route('/')
 def home():
     db = get_db()
-    db.execute("DELETE FROM license_keys WHERE is_used = 0")
-    db.commit()
-    db.close()
+    try:
+        db.execute("DELETE FROM license_keys WHERE is_used = 0")
+        db.commit()
+    except:
+        pass
+    finally:
+        db.close()
 
     html_template = """
     <!DOCTYPE html>
@@ -76,9 +80,13 @@ def generate_key():
     license_key = "XW-" + random_string
     
     db = get_db()
-    db.execute("INSERT INTO license_keys (license_key, is_used, expires_at) VALUES (?, 0, datetime('now', '+1 day'))", (license_key,))
-    db.commit()
-    db.close()
+    try:
+        db.execute("INSERT INTO license_keys (license_key, is_used, expires_at) VALUES (?, 0, datetime('now', '+1 day'))", (license_key,))
+        db.commit()
+    except:
+        pass
+    finally:
+        db.close()
     
     base_url = request.host_url.rstrip('/')
     raw_destination = f"{base_url}/get_key_page?key={license_key}"
@@ -118,25 +126,24 @@ def check_key():
     
     db = get_db()
     cursor = db.cursor()
-    cursor.execute("SELECT * FROM license_keys WHERE license_key = ?", (key,))
-    row = cursor.fetchone()
-    
-    if not row:
+    try:
+        cursor.execute("SELECT * FROM license_keys WHERE license_key = ?", (key,))
+        row = cursor.fetchone()
+        
+        if not row:
+            return jsonify({"status": "error", "message": "❌ Key không tồn tại!"})
+        
+        if row['is_used'] == 1:
+            if row['used_by'] == str(telegram_id):
+                return jsonify({"status": "success", "message": "✅ Key hợp lệ!"})
+            else:
+                return jsonify({"status": "error", "message": "❌ Key đã được dùng bởi tài khoản khác!"})
+        
+        cursor.execute("UPDATE license_keys SET is_used = 1, used_by = ? WHERE license_key = ?", (str(telegram_id), key))
+        db.commit()
+        return jsonify({"status": "success", "message": "🎉 Kích hoạt thành công!"})
+    finally:
         db.close()
-        return jsonify({"status": "error", "message": "❌ Key không tồn tại!"})
-    
-    if row['is_used'] == 1:
-        if row['used_by'] == str(telegram_id):
-            db.close()
-            return jsonify({"status": "success", "message": "✅ Key hợp lệ!"})
-        else:
-            db.close()
-            return jsonify({"status": "error", "message": "❌ Key đã được dùng bởi tài khoản khác!"})
-    
-    cursor.execute("UPDATE license_keys SET is_used = 1, used_by = ? WHERE license_key = ?", (str(telegram_id), key))
-    db.commit()
-    db.close()
-    return jsonify({"status": "success", "message": "🎉 Kích hoạt thành công!"})
 
 
 # --- TELEGRAM BOT & GAME LOGIC ---
@@ -475,9 +482,4 @@ def run_sprint_bot_engine(chat_id, uid, skey):
         "user-login": "login_v2",
         "user-secret-key": skey
     }
-    while cfg["global_running"] and not acc_st["random_stop"].is_set():
-        try:
-            base_build = Decimal(str(cfg["bet_amount_total"]))
-            acc_st["current_build"] = base_build
-
-    
+    while cfg["global_running"] and not acc_st["random_stop"].i
