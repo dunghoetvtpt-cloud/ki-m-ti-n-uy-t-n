@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""
-ESCAPE MASTER ULTIMATE MULTI-ACCOUNT BOT - FINAL CLEAN CODE
-===========================================================
-- Fix toàn bộ lỗi cú pháp chuỗi, chạy mượt 100% trên Render
-- Hỗ trợ đa luồng vô hạn tài khoản độc lập
-- Cấu hình mốc cược: 3.8 (vô hạn), 10 (giới hạn 3 lần), 100, 1000, 10000 (vô hạn)
-"""
 import telebot
 from telebot import types
 import websocket
@@ -102,8 +95,7 @@ def handle_link_messages(message):
             pass
     if not text.startswith("/"):
         bot.reply_to(message, "⚠️ Vui lòng dán đúng **Link game XWorld** chứa `userId` và `secretKey` để bot nhận diện tài khoản.")
-
-@bot.callback_query_handler(func=lambda call: True)
+                @bot.callback_query_handler(func=lambda call: True)
 def callback_inline(call):
     chat_id = call.message.chat.id
     data = call.data
@@ -229,8 +221,7 @@ def back_home(call):
         bot.edit_message_text(msg_text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
     except Exception:
         pass
-
-def get_headers(sess):
+    def get_headers(sess):
     return {
         "Content-Type": "application/json",
         "user-id": str(sess["user_id"]),
@@ -458,4 +449,6 @@ def run_telebot_polling():
 
 if __name__ == "__main__":
     Thread(target=run_telebot_polling, daemon=True).start()
-    port = int(os.environ.get("POR
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+    
