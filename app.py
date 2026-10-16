@@ -262,8 +262,8 @@ def handle_text_messages(message):
                 bot.reply_to(message, f"🎉 {res_data.get('message')}\n\n👉 Mời bạn bấm `/start` để mở giao diện quản lý game!", parse_mode="Markdown")
             else:
                 bot.reply_to(message, f"{res_data.get('message', '❌ Key không hợp lệ!')}\n\n👉 Bấm `/start` để thử lại.")
-        except Exception:
-            bot.reply_to(message, "❌ Không thể kết nối tới máy chủ xác thực. Vui lòng thử lại sau!")
+        except Exception as e:
+            bot.reply_to(message, f"❌ Lỗi kết nối chi tiết: `{str(e)}`", parse_mode="Markdown")
         return
 
     # 2. Xử lý chờ dán link game
