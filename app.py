@@ -10,6 +10,9 @@ from threading import Thread, Lock, Event
 from decimal import Decimal, ROUND_DOWN
 from flask import Flask, request, redirect, jsonify, render_template_string
 
+# CẤU HÌNH DOMAIN CỐ ĐỊNH TRÊN RENDER
+RENDER_DOMAIN = "https://bot-tool-golike.onrender.com"
+
 TELEGRAM_BOT_TOKEN = "8513825480:AAGzOtGqQpkKJv1563LWU5_PcpexOJVi3HE"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, parse_mode="Markdown")
 
@@ -80,8 +83,8 @@ def generate_key():
     db.commit()
     db.close()
     
-    base_url = request.host_url.rstrip('/')
-    raw_destination = f"{base_url}/get_key_page?key={license_key}"
+    # Gán đường dẫn cố định trang nhận key
+    raw_destination = f"{RENDER_DOMAIN}/get_key_page?key={license_key}"
     
     long_url = requests.utils.quote(raw_destination)
     api_token = '68a76c1354de3f0da567ca17'
@@ -161,8 +164,7 @@ def get_user_config(chat_id):
 def send_welcome(message):
     chat_id = message.chat.id
     if chat_id not in verified_users:
-        # Đã trỏ thẳng vào /generate để qua trang lấy key chuẩn xác
-        render_domain = "https://bot-tool-golike.onrender.com/generate"
+        generate_url = f"{RENDER_DOMAIN}/generate"
         msg_text = (
             "🔒 *XWORLD LICENSE GATEWAY*\n"
             "━━━━━━━━━━━━━━━━━━━\n"
@@ -171,7 +173,7 @@ def send_welcome(message):
         )
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
-            types.InlineKeyboardButton("🌐 Tới Trang Lấy Key", url=render_domain),
+            types.InlineKeyboardButton("🌐 Tới Trang Lấy Key", url=generate_url),
             types.InlineKeyboardButton("🔑 Nhập Key Kích Hoạt", callback_data="prompt_enter_key")
         )
         bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
