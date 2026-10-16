@@ -259,7 +259,12 @@ def handle_text_messages(message):
         
         try:
             response = requests.get(api_url, headers=headers, timeout=15)
-            res_data = response.json()
+            
+            try:
+                res_data = response.json()
+            except Exception:
+                bot.reply_to(message, f"❌ Web không trả về JSON hợp lệ. Nội dung nhận được:\n`{response.text[:300]}`", parse_mode="Markdown")
+                return
             
             if res_data.get("status") == "success":
                 verified_users.add(chat_id)
@@ -452,3 +457,4 @@ if __name__ == "__main__":
     Thread(target=run_telebot_polling, daemon=True).start()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+    
