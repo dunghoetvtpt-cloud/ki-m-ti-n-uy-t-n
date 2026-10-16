@@ -19,7 +19,6 @@ app = Flask(__name__)
 def home():
     return "Escape Master Multi-Bot 24/7 is running!"
 
-# Cấu hình đa luồng lưu theo chat_id
 user_data = {}
 data_lock = Lock()
 
@@ -27,8 +26,8 @@ def get_user_config(chat_id):
     with data_lock:
         if chat_id not in user_data:
             user_data[chat_id] = {
-                "accounts": {},             # Danh sách nick: {uid: secret_key}
-                "global_running": False,    # Trạng thái bật/tắt chung cho tất cả nick
+                "accounts": {},
+                "global_running": False,
                 "waiting_for_link": False,
                 "asset_type": "BUILD",
                 "base_bet": 3.8,
@@ -40,7 +39,6 @@ def get_user_config(chat_id):
             }
         return user_data[chat_id]
 
-# Data chạy ngầm cho từng nick riêng biệt
 account_threads = {}
 
 def get_account_state(uid):
@@ -66,7 +64,6 @@ def send_welcome(message):
     chat_id = message.chat.id
     cfg = get_user_config(chat_id)
     cfg["waiting_for_link"] = False
-    
     status_str = "🟢 Đang chạy tự động 24/7" if cfg["global_running"] else "🔴 Đang dừng"
     total_accs = len(cfg["accounts"])
     
@@ -83,18 +80,14 @@ def send_welcome(message):
     )
     
     markup = types.InlineKeyboardMarkup(row_width=2)
-    btn_link = types.InlineKeyboardButton("⚙️ Thêm Link Game", callback_data="btn_setup_link")
-    btn_toggle = types.InlineKeyboardButton("🚀 Bật Auto Tất Cả" if not cfg["global_running"] else "⏹️ Tắt Tất Cả Bot", callback_data="btn_toggle_bot")
-    btn_asset = types.InlineKeyboardButton(f"🪙 Đổi Coin ({cfg['asset_type']})", callback_data="btn_toggle_asset")
-    btn_bet = types.InlineKeyboardButton(f"💵 Đổi Cược ({cfg['base_bet']})", callback_data="btn_change_bet")
-    btn_accs = types.InlineKeyboardButton("👥 Danh sách Tài Khoản", callback_data="btn_list_accounts")
-    btn_status = types.InlineKeyboardButton("📊 Thống kê tổng quan", callback_data="btn_status")
-    
-    markup.add(btn_link)
-    markup.add(btn_toggle)
-    markup.add(btn_asset, btn_bet)
-    markup.add(btn_accs, btn_status)
-    
+    markup.add(
+        types.InlineKeyboardButton("⚙️ Thêm Link Game", callback_data="btn_setup_link"),
+        types.InlineKeyboardButton("🚀 Bật Auto Tất Cả" if not cfg["global_running"] else "⏹️ Tắt Tất Cả Bot", callback_data="btn_toggle_bot"),
+        types.InlineKeyboardButton(f"🪙 Đổi Coin ({cfg['asset_type']})", callback_data="btn_toggle_asset"),
+        types.InlineKeyboardButton(f"💵 Đổi Cược ({cfg['base_bet']})", callback_data="btn_change_bet"),
+        types.InlineKeyboardButton("👥 Danh sách Tài Khoản", callback_data="btn_list_accounts"),
+        types.InlineKeyboardButton("📊 Thống kê tổng quan", callback_data="btn_status")
+    )
     bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -106,18 +99,17 @@ def callback_inline(call):
     if data == "btn_setup_link":
         cfg["waiting_for_link"] = True
         bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "📥 **Vui lòng dán Link game XWorld của bạn vào đây!**\n(Bạn có thể dán nhiều link khác nhau để thêm nhiều tài khoản chạy song song).")
+        bot.send_message(chat_id, "📥 **Vui lòng dán Link game XWorld của bạn vào đây!**")
         
     elif data == "btn_toggle_bot":
         if not cfg["accounts"]:
             bot.answer_callback_query(call.id, "⚠️ Chưa có tài khoản nào! Hãy bấm Thêm Link Game trước.", show_alert=True)
             return
-            
         if not cfg["global_running"]:
             cfg["global_running"] = True
             for uid, skey in cfg["accounts"].items():
                 Thread(target=run_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
-            bot.answer_callback_query(call.id, f"🚀 Đã bật cược TỰ ĐỘNG cho toàn bộ {len(cfg['accounts'])} tài khoản!")
+            bot.answer_callback_query(call.id, f"🚀 Đã bật cược TỰ ĐỘNG cho {len(cfg['accounts'])} tài khoản!")
         else:
             cfg["global_running"] = False
             for uid in cfg["accounts"]:
@@ -128,7 +120,7 @@ def callback_inline(call):
                         acc_st["ws_app"].close()
                     except Exception:
                         pass
-            bot.answer_callback_query(call.id, "⏹️ Đã dừng tất cả các tài khoản!")
+            bot.answer_callback_query(call.id, "⏹️ Đã dừng tất cả tài khoản!")
         refresh_menu(call.message)
         
     elif data == "btn_toggle_asset":
@@ -140,50 +132,40 @@ def callback_inline(call):
         allowed_bets = [3.8, 10.0, 100.0, 1000.0, 10000.0]
         cfg["bet_index"] = (cfg["bet_index"] + 1) % len(allowed_bets)
         chosen_bet = allowed_bets[cfg["bet_index"]]
-        
         if chosen_bet == 10.0:
             if cfg["count_10_used"] >= 3:
                 cfg["bet_index"] = (cfg["bet_index"] + 1) % len(allowed_bets)
                 chosen_bet = allowed_bets[cfg["bet_index"]]
             else:
                 cfg["count_10_used"] += 1
-                
         cfg["base_bet"] = chosen_bet
-        bot.answer_callback_query(call.id, f"Đã đổi mức cược thành {cfg['base_bet']}")
+        bot.answer_callback_query(call.id, f"Mức cược: {cfg['base_bet']}")
         refresh_menu(call.message)
         
     elif data == "btn_list_accounts":
         if not cfg["accounts"]:
-            bot.answer_callback_query(call.id, "Chưa có tài khoản nào được lưu!", show_alert=True)
+            bot.answer_callback_query(call.id, "Chưa có tài khoản nào!", show_alert=True)
             return
-        msg = "👥 *DANH SÁCH TÀI KHOẢN ĐANG QUẢN LÝ:*\n━━━━━━━━━━━━━━━━━━━\n"
+        msg = "👥 *DANH SÁCH TÀI KHOẢN:*\n"
         for idx, uid in enumerate(cfg["accounts"].keys(), 1):
             msg += f"{idx}. User ID: `{uid}`\n"
-        msg += "\n💡 Bấm *🚀 Bật Auto Tất Cả* ở menu chính để chạy đồng thời tất cả nick trên!"
         bot.send_message(chat_id, msg, parse_mode="Markdown")
         
     elif data == "btn_status":
-        tot_bets = 0
-        tot_wins = 0
-        tot_losses = 0
-        tot_profit = 0.0
-        
+        tot_bets, tot_wins, tot_losses, tot_profit = 0, 0, 0, 0.0
         for uid in cfg["accounts"]:
             st = get_account_state(uid)
             tot_bets += st["total_bets"]
             tot_wins += st["wins"]
             tot_losses += st["losses"]
             tot_profit += st["total_profit"]
-            
         wr = (tot_wins / tot_bets * 100) if tot_bets > 0 else 0
         msg = (
-            "📊 *THỐNG KÊ TỔNG CÁC TÀI KHOẢN*\n"
-            "━━━━━━━━━━━━━━━━━━━\n"
+            "📊 *THỐNG KÊ TỔNG*\n"
             f"Trạng thái: {'🟢 Đang chạy' if cfg['global_running'] else '🔴 Đang dừng'}\n"
-            f"Số tài khoản: `{len(cfg['accounts'])} nick`\n"
-            f"Tổng ván cược: `{tot_bets}`\n"
-            f"Thắng / Thua: `{tot_wins}` / `{tot_losses}` (WR: `{wr:.1f}%`)\n"
-            f"Tổng lợi nhuận: `{tot_profit:+.4f} {cfg['asset_type']}`"
+            f"Số nick: `{len(cfg['accounts'])}` | Tổng ván: `{tot_bets}`\n"
+            f"Thắng/Thua: `{tot_wins}`/`{tot_losses}` ({wr:.1f}%)\n"
+            f"Lời: `{tot_profit:+.4f} {cfg['asset_type']}`"
         )
         bot.send_message(chat_id, msg, parse_mode="Markdown")
 
@@ -200,57 +182,46 @@ def handle_text_messages(message):
                 query_params = parse_qs(parsed_url.query)
                 uid_str = query_params.get("userId", [None])[0]
                 skey = query_params.get("secretKey", [None])[0]
-                
                 if uid_str and skey:
                     uid = int(uid_str)
                     cfg["accounts"][uid] = skey
                     cfg["waiting_for_link"] = False
-                    
-                    # Nếu hệ thống đang bật chạy tự động, cho nick mới chạy luôn
                     if cfg["global_running"]:
                         Thread(target=run_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
-                        
-                    bot.reply_to(message, f"✅ **Đã thêm tài khoản thành công!**\n• User ID: `{uid}`\n• Tổng số nick: `{len(cfg['accounts'])}`\n\nGõ lệnh `/start` để quay lại bảng điều khiển.")
+                    bot.reply_to(message, f"✅ **Đã thêm User ID:** `{uid}`\nTổng nick: `{len(cfg['accounts'])}`\nGõ /start để xem menu.")
                     return
             except Exception:
                 pass
-        bot.reply_to(message, "⚠️ Link không hợp lệ! Hãy dán đúng link game XWorld chứa `userId` và `secretKey`.")
+        bot.reply_to(message, "⚠️ Link không hợp lệ! Vui lòng dán đúng link chứa `userId` và `secretKey`.")
     else:
-        if text.startswith("/"):
-            return
-        bot.reply_to(message, "💡 Vui lòng gõ `/start` để mở bảng điều khiển bot.")
+        if not text.startswith("/"):
+            bot.reply_to(message, "💡 Vui lòng gõ `/start` để mở bảng điều khiển.")
 
 def refresh_menu(message):
     chat_id = message.chat.id
     cfg = get_user_config(chat_id)
     status_str = "🟢 Đang chạy tự động 24/7" if cfg["global_running"] else "🔴 Đang dừng"
-    total_accs = len(cfg["accounts"])
     
     msg_text = (
         "🎮 *XWORLD ESCAPE MASTER - BOT MULTI AUTO*\n"
         "━━━━━━━━━━━━━━━━━━━\n"
         f"📌 *Trạng thái:* {status_str}\n"
-        f"👥 *Số tài khoản đã thêm:* `{total_accs} nick`\n"
+        f"👥 *Số tài khoản đã thêm:* `{len(cfg['accounts'])} nick`\n"
         f"🪙 *Đồng cược:* `{cfg['asset_type']}`\n"
         f"💵 *Mức cược:* `{cfg['base_bet']}`\n"
         f"📈 *Hệ số nhân:* `x{cfg['multiplier']}`\n"
         "━━━━━━━━━━━━━━━━━━━\n"
         "👇 *Chọn thao tác bên dưới:*"
     )
-    
     markup = types.InlineKeyboardMarkup(row_width=2)
-    btn_link = types.InlineKeyboardButton("⚙️ Thêm Link Game", callback_data="btn_setup_link")
-    btn_toggle = types.InlineKeyboardButton("🚀 Bật Auto Tất Cả" if not cfg["global_running"] else "⏹️ Tắt Tất Cả Bot", callback_data="btn_toggle_bot")
-    btn_asset = types.InlineKeyboardButton(f"🪙 Đổi Coin ({cfg['asset_type']})", callback_data="btn_toggle_asset")
-    btn_bet = types.InlineKeyboardButton(f"💵 Đổi Cược ({cfg['base_bet']})", callback_data="btn_change_bet")
-    btn_accs = types.InlineKeyboardButton("👥 Danh sách Tài Khoản", callback_data="btn_list_accounts")
-    btn_status = types.InlineKeyboardButton("📊 Thống kê tổng quan", callback_data="btn_status")
-    
-    markup.add(btn_link)
-    markup.add(btn_toggle)
-    markup.add(btn_asset, btn_bet)
-    markup.add(btn_accs, btn_status)
-    
+    markup.add(
+        types.InlineKeyboardButton("⚙️ Thêm Link Game", callback_data="btn_setup_link"),
+        types.InlineKeyboardButton("🚀 Bật Auto Tất Cả" if not cfg["global_running"] else "⏹️ Tắt Tất Cả Bot", callback_data="btn_toggle_bot"),
+        types.InlineKeyboardButton(f"🪙 Đổi Coin ({cfg['asset_type']})", callback_data="btn_toggle_asset"),
+        types.InlineKeyboardButton(f"💵 Đổi Cược ({cfg['base_bet']})", callback_data="btn_change_bet"),
+        types.InlineKeyboardButton("👥 Danh sách Tài Khoản", callback_data="btn_list_accounts"),
+        types.InlineKeyboardButton("📊 Thống kê tổng quan", callback_data="btn_status")
+    )
     try:
         bot.edit_message_text(msg_text, chat_id, message.message_id, reply_markup=markup, parse_mode="Markdown")
     except Exception:
@@ -305,7 +276,6 @@ def get_balance(cfg, uid, skey):
                             return float(item.get("balance", 0))
     except Exception:
         pass
-        
     data = api_call(uid, skey, "POST", "https://api.escapemaster.net/escape_game/get_user_asset",
                     json={"asset_type": cfg["asset_type"], "user_id": uid})
     if data and data.get("code") == 0:
@@ -361,9 +331,7 @@ def process_game_result(chat_id, cfg, uid, skey, issue_id, is_killed, award, bet
     acc_st = get_account_state(uid)
     profit = award - bet
     acc_st["total_bets"] += 1
-    
     status_text = "THẮNG 🟢" if not is_killed else "THUA 🔴"
-    
     if not is_killed:
         acc_st["wins"] += 1
         acc_st["consecutive_losses"] = 0
@@ -374,24 +342,18 @@ def process_game_result(chat_id, cfg, uid, skey, issue_id, is_killed, award, bet
         if acc_st["consecutive_losses"] >= cfg["loss_threshold"]:
             acc_st["skips_left"] = cfg["skip_rounds"]
             acc_st["consecutive_losses"] = 0
-            
     acc_st["total_profit"] += profit
     bal = get_balance(cfg, uid, skey)
     wr = (acc_st["wins"] / acc_st["total_bets"] * 100) if acc_st["total_bets"] > 0 else 0
-    
     msg = (
         f"🏁 *[NICK `{uid}`] KẾT QUẢ PHIÊN #{issue_id}*\n"
-        "━━━━━━━━━━━━━━━━━━━\n"
         f"Trạng thái: *{status_text}*\n"
-        f"Phòng bẫy: `{killed_room}` | Chọn: `{my_room}`\n"
-        f"Tiền cược: `{bet:.4f} {cfg['asset_type']}`\n"
-        f"Tiền thưởng: `{award:.4f} {cfg['asset_type']}`\n"
-        f"Lời trận này: `{profit:+.4f}`\n"
-        f"Tổng lời: `{acc_st['total_profit']:+.4f}` (WR: {wr:.1f}%)\n"
+        f"Bẫy: `{killed_room}` | Chọn: `{my_room}`\n"
+        f"Cược: `{bet:.4f}` | Thưởng: `{award:.4f}`\n"
+        f"Lời trận: `{profit:+.4f}` | Tổng: `{acc_st['total_profit']:+.4f}` ({wr:.1f}%)\n"
         f"💰 Số dư ví: `{bal:.4f} {cfg['asset_type']}`"
     )
     bot.send_message(chat_id, msg, parse_mode="Markdown")
-    
     acc_st["has_bet"] = False
     acc_st["betting_issue"] = None
 
@@ -407,31 +369,24 @@ def run_bot_engine(chat_id, uid, skey):
         try:
             data = json.loads(message)
             msg_type = data.get("msg_type", "")
-            
             if msg_type == "notify_count_down":
                 issue_id = data.get("issue_id")
                 count_down = data.get("count_down", 0)
-                
                 if acc_st["current_issue"] != issue_id:
                     acc_st["current_issue"] = issue_id
                     acc_st["has_bet"] = False
-                    
                     if acc_st["skips_left"] > 0:
                         acc_st["skips_left"] -= 1
                         return
-                        
                     room = random.randint(1, 8)
                     amount = cfg["base_bet"]
-                    
                     if enter_room(cfg, uid, skey, room):
                         time.sleep(0.3)
                         if place_bet(cfg, uid, skey, room, amount):
                             acc_st["has_bet"] = True
                             acc_st["betting_issue"] = issue_id
                             acc_st["watchdog_last_time"] = time.time()
-                            
                             start_random_rooms(cfg, uid, skey)
-                            
                             def check_api_backup():
                                 time.sleep(count_down + 5)
                                 if acc_st["has_bet"] and acc_st["betting_issue"] == issue_id:
@@ -447,7 +402,6 @@ def run_bot_engine(chat_id, uid, skey):
                                             process_game_result(chat_id, cfg, uid, skey, issue_id, is_killed, award, bet_amt, kr, mr)
                                             return
                             Thread(target=check_api_backup, daemon=True).start()
-
             elif msg_type == "notify_result":
                 issue_id = data.get("issue_id")
                 if acc_st["has_bet"] and issue_id == acc_st["betting_issue"]:
@@ -457,7 +411,6 @@ def run_bot_engine(chat_id, uid, skey):
                     killed_room = data.get("killed_room", "?")
                     my_room = data.get("room_id", "?")
                     process_game_result(chat_id, cfg, uid, skey, issue_id, is_killed, award, bet_val, killed_room, my_room)
-
             elif msg_type == "notify_heartbeat":
                 ws.send(json.dumps({"msg_type": "heartbeat_ack"}))
         except Exception:
@@ -477,4 +430,33 @@ def run_bot_engine(chat_id, uid, skey):
 
     while cfg["global_running"]:
         try:
-            ws =
+            ws = websocket.WebSocketApp(
+                ws_url,
+                header={"Origin": "https://escapemaster.net", "User-Agent": "Mozilla/5.0"},
+                on_open=lambda w: w.send(json.dumps({
+                    "msg_type": "handle_enter_game",
+                    "asset_type": cfg["asset_type"],
+                    "user_id": uid,
+                    "user_secret_key": skey
+                })),
+                on_message=on_message,
+                on_error=lambda w, e: None,
+                on_close=lambda w, c, m: None
+            )
+            acc_st["ws_app"] = ws
+            ws.run_forever(ping_interval=15, ping_timeout=10)
+        except Exception:
+            pass
+        time.sleep(3)
+
+def run_telebot_polling():
+    try:
+        bot.remove_webhook()
+    except Exception:
+        pass
+    bot.infinity_polling(timeout=10, long_polling_timeout=5)
+
+if __name__ == "__main__":
+    Thread(target=run_telebot_polling, daemon=True).start()
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
