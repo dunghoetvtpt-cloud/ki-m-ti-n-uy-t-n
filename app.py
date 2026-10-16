@@ -314,7 +314,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
         time.sleep(3)
 
 # ==========================================
-# ENGINE 2: ĐUA TỐC ĐỘ (CANH SÁT NÚT GIÂY CUỐI ĐỂ CƯỢC)
+# ENGINE 2: ĐUA TỐC ĐỘ (CANH ĐÚNG 5 GIÂY CUỐI ĐỂ CƯỢC)
 # ==========================================
 def run_sprint_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)["sprint"]
@@ -351,13 +351,14 @@ def run_sprint_bot_engine(chat_id, uid, skey):
                 time.sleep(3)
                 continue
 
-            # --- TÍNH TOÁN CANH GIÂY CUỐI ---
-            # Chờ gần hết thời gian ván đấu, chỉ để lại khoảng 2-3 giây cuối cùng trước khi chốt đơn
-            wait_target = float(expire) - 2.5
+            # --- CHỜ ĐẾN ĐÚNG 5 GIÂY CUỐI CỦA VÁN ---
+            wait_target = float(expire) - 5.0
             if wait_target > 0:
-                time.sleep(wait_target)
+                for _ in range(int(wait_target)):
+                    if not cfg["global_running"] or acc_st["random_stop"].is_set(): break
+                    time.sleep(1)
 
-            # Kiểm tra lại thông tin ván mới nhất cận sát giờ cược để lấy danh sách chuẩn
+            # Lấy lại thông tin sát nút 5 giây cuối để bảo đảm đồng bộ
             r_check = requests.get(f"{base_api}/sprint/home?asset={cfg['asset_type']}", headers=headers, timeout=5)
             if r_check.status_code == 200:
                 latest_data = r_check.json().get("data", {})
@@ -365,7 +366,7 @@ def run_sprint_bot_engine(chat_id, uid, skey):
                 if current_issue == issue_id:
                     athletes = latest_data.get("athlete_list", athletes)
 
-            # Phân tích lịch sử và xáo trộn chọn 3 con sát giờ
+            # Phân tích lịch sử / lọc chọn 3 con
             history = acc_st["history_winners"]
             if history:
                 athletes_sorted = sorted(athletes, key=lambda a: history.count(a["id"]))
@@ -379,7 +380,7 @@ def run_sprint_bot_engine(chat_id, uid, skey):
             each_bet = acc_st["current_build"].quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
             total_bet_amount = each_bet * Decimal(len(chosen))
 
-            # Bắn lệnh cược dồn dập cực nhanh ở những giây cuối
+            # Bắn dồn dập 3 lệnh cược trong khoảng 5 giây cuối
             for aid in chosen:
                 payload = {
                     "issue_id": issue_id,
@@ -393,8 +394,8 @@ def run_sprint_bot_engine(chat_id, uid, skey):
 
             acc_st["total_bets"] += 1
 
-            # Chờ thêm phần thời gian còn lại để lấy kết quả
-            time.sleep(3)
+            # Chờ thêm để kết thúc ván và lấy kết quả
+            time.sleep(6)
 
             winner = None
             for _ in range(15):
