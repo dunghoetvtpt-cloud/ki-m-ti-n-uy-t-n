@@ -109,7 +109,7 @@ def callback_inline(call):
             cfg["global_running"] = True
             for uid, skey in cfg["accounts"].items():
                 Thread(target=run_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
-            bot.answer_callback_query(call.id, f"🚀 Đã bật cược TỰ ĐỘNG liên tục cho {len(cfg['accounts'])} tài khoản!")
+            bot.answer_callback_query(call.id, f"🚀 Đã bật cược TỰ ĐỘNG cho {len(cfg['accounts'])} tài khoản!")
         else:
             cfg["global_running"] = False
             for uid in cfg["accounts"]:
@@ -403,7 +403,6 @@ def run_bot_engine(chat_id, uid, skey):
     acc_st = get_account_state(uid)
     ws_url = "wss://api.escapemaster.net/escape_master/ws"
     
-    # Kích hoạt thêm một luồng dự phòng (Backup Loop) kiểm tra trạng thái mỗi 12 giây
     def self_healing_loop():
         while cfg["global_running"]:
             time.sleep(12)
@@ -414,7 +413,6 @@ def run_bot_engine(chat_id, uid, skey):
                     if items:
                         latest = items[0]
                         latest_issue = str(latest.get("issue_id"))
-                        # Nếu ván mới ra mà bot chưa cược thì tự động ép cược luôn
                         if acc_st["current_issue"] != latest_issue and not acc_st["has_bet"]:
                             execute_auto_bet(chat_id, uid, skey, latest_issue, 15)
                 except Exception:
@@ -477,4 +475,10 @@ def run_bot_engine(chat_id, uid, skey):
                 on_error=lambda w, e: None,
                 on_close=lambda w, c, m: None
             )
-       
+            acc_st["ws_app"] = ws
+            ws.run_forever(ping_interval=15, ping_timeout=10)
+        except Exception:
+            pass
+        time.sleep(3)
+
+def run_telebot_polling
