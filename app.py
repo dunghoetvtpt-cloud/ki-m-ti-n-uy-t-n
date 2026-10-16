@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
+#!/usr/init/env python3
 """
-ESCAPE MASTER MULTI-ACCOUNT TELEGRAM BOT - RENDER 24/7
-======================================================
-- Hỗ trợ đa luồng: Chạy song song nhiều tài khoản độc lập cùng lúc.
-- Cấu hình mốc cược: 3.8 (vô hạn), 10 (giới hạn 3 lần), 100, 1000, 10000 (vô hạn).
-- Tích hợp Watchdog 360s và Random phòng 0.2s mượt mà.
+ESCAPE MASTER ULTIMATE MULTI-ACCOUNT BOT - FINAL UI FIX
+=======================================================
+- Giao diện menu /start trực quan, dễ thao tác
+- Hỗ trợ đa luồng nhiều tài khoản chạy song song độc lập
+- Cấu hình mốc cược: 3.8 (vô hạn), 10 (giới hạn 3 lần), 100, 1000, 10000 (vô hạn)
 """
 import telebot
 from telebot import types
@@ -25,10 +25,9 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Escape Master Multi-Account Bot is running 24/7!"
+    return "Escape Master Ultimate Bot is running 24/7!"
 
-# Quản lý danh sách tài khoản theo từng Chat ID và User ID riêng biệt
-# Cấu trúc: multi_accounts[chat_id][user_id] = { session_data }
+# Quản lý đa tài khoản theo Chat ID
 multi_accounts = {}
 manager_lock = Lock()
 
@@ -67,20 +66,28 @@ def get_account_session(chat_id, user_id):
 def send_welcome(message):
     chat_id = message.chat.id
     
+    with manager_lock:
+        accs = multi_accounts.get(chat_id, {})
+        total_accs = len(accs)
+        running_accs = sum(1 for s in accs.values() if s["running"])
+    
     msg_text = (
-        f"🎮 *XWORLD ESCAPE MASTER - MULTI-ACCOUNT BOT*\n"
+        f"🎮 *XWORLD ESCAPE MASTER - BOT TỰ ĐỘNG*\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
-        f"📌 *Hệ thống đa luồng độc lập*\n"
-        f"👉 Hãy **dán Link game** bất kỳ vào đây để thêm và quản lý tài khoản chạy song song!"
+        f"📌 *Trạng thái:* Hệ thống đang sẵn sàng\n"
+        f"👥 *Tổng số nick đã thêm:* `{total_accs}`\n"
+        f"🟢 *Số nick đang chạy ngầm:* `{running_accs}`\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"👉 *Hướng dẫn:* Hãy dán trực tiếp **Link game XWorld** vào khung chat này để thêm nick mới, hoặc bấm quản lý bên dưới!"
     )
     
     markup = types.InlineKeyboardMarkup(row_width=1)
-    btn_list = types.InlineKeyboardButton("📋 Danh sách tài khoản đang quản lý", callback_data="btn_list_acc")
+    btn_list = types.InlineKeyboardButton("📋 Danh sách tài khoản & Quản lý", callback_data="btn_list_acc")
     markup.add(btn_list)
     
     bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
 
-# Xử lý khi người dùng dán link game trực tiếp để thêm tài khoản
+# Nhận link game tự động thêm tài khoản
 @bot.message_handler(func=lambda message: True)
 def handle_link_messages(message):
     chat_id = message.chat.id
@@ -98,14 +105,13 @@ def handle_link_messages(message):
                 sess = get_account_session(chat_id, uid)
                 sess["secret_key"] = skey
                 
-                bot.reply_to(message, f"✅ **Đã thêm/cập nhật tài khoản thành công!**\n• User ID: `{uid}`\n\nBấm vào danh sách bên dưới để bật/tắt cược cho tài khoản này.")
-                show_account_management(chat_id, message.message_id, uid)
+                bot.reply_to(message, f"✅ **Thêm tài khoản thành công!**\n• User ID: `{uid}`\n\nHệ thống đã lưu. Bấm /start để mở bảng quản lý và bật chạy tự động.")
                 return
         except:
             pass
             
     if not text.startswith("/"):
-        bot.reply_to(message, "⚠️ Vui lòng dán đúng **Link game XWorld** chứa `userId` và `secretKey` để thêm tài khoản mới.")
+        bot.reply_to(message, "⚠️ Vui lòng dán đúng **Link game XWorld** chứa `userId` và `secretKey` để bot nhận diện tài khoản.")
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_inline(call):
@@ -116,7 +122,6 @@ def callback_inline(call):
         show_accounts_list(chat_id, call.message.message_id)
         
     elif data.startswith("acc_"):
-        # Format: acc_UID_action
         parts = data.split("_")
         uid = int(parts[1])
         action = parts[2]
@@ -125,11 +130,11 @@ def callback_inline(call):
         if action == "toggle":
             if not sess["running"]:
                 if not sess["secret_key"]:
-                    bot.answer_callback_query(call.id, "⚠️ Tài khoản chưa có Secret Key hợp lệ!", show_alert=True)
+                    bot.answer_callback_query(call.id, "⚠️ Tài khoản chưa có Secret Key!", show_alert=True)
                     return
                 sess["running"] = True
                 Thread(target=run_bot_engine, args=(chat_id, uid), daemon=True).start()
-                bot.answer_callback_query(call.id, f"🚀 Đã bật luồng cho nick {uid}!")
+                bot.answer_callback_query(call.id, f"🚀 Đã kích hoạt chạy tự động cho nick {uid}!")
             else:
                 sess["running"] = False
                 sess["random_stop"].set()
@@ -164,7 +169,7 @@ def callback_inline(call):
             msg = (
                 f"📊 *THỐNG KÊ NICK `{uid}`*\n"
                 f"━━━━━━━━━━━━━━━━━━━\n"
-                f"Trạng thái: {'🟢 Đang chạy' if sess['running'] else '🔴 Đang dừng'}\n"
+                f"Trạng thái: {'🟢 Đang chạy tự động' if sess['running'] else '🔴 Đang dừng'}\n"
                 f"Số dư ví: `{bal:.4f} {sess['asset_type']}`\n"
                 f"Tổng ván: `{sess['total_bets']}` | Thắng: `{sess['wins']}` | Thua: `{sess['losses']}` (WR: `{wr:.1f}%`)\n"
                 f"Tổng lời: `{sess['total_profit']:+.4f} {sess['asset_type']}`"
@@ -176,28 +181,30 @@ def show_accounts_list(chat_id, message_id):
         accs = multi_accounts.get(chat_id, {})
         
     if not accs:
-        bot.answer_callback_query(message_id, "Chưa có tài khoản nào được thêm!", show_alert=True)
+        bot.answer_callback_query(message_id, "Chưa có tài khoản nào! Hãy dán link game vào khung chat trước.", show_alert=True)
         return
         
     markup = types.InlineKeyboardMarkup(row_width=1)
     for uid, sess in accs.items():
-        status = "🟢" if sess["running"] else "🔴"
-        btn = types.InlineKeyboardButton(f"{status} Tài khoản: {uid} ({sess['asset_type']})", callback_data=f"acc_{uid}_status_menu")
+        status = "🟢 Đang chạy" if sess["running"] else "🔴 Đang dừng"
+        btn = types.InlineKeyboardButton(f"👤 {uid} ({sess['asset_type']}) - {status}", callback_data=f"acc_{uid}_status_menu")
         markup.add(btn)
+    btn_back = types.InlineKeyboardButton("🏠 Về Menu Chính", callback_data="btn_home")
+    markup.add(btn_back)
         
     try:
-        bot.edit_message_text("📋 *DANH SÁCH TÀI KHOẢN ĐANG QUẢN LÝ*\nChọn tài khoản bên dưới để cấu hình:", chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
+        bot.edit_message_text("📋 *DANH SÁCH TÀI KHOẢN*\nBấm vào nick bên dưới để bật/tắt chạy tự động:", chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
     except:
         pass
 
 def show_account_management(chat_id, message_id, uid):
     sess = get_account_session(chat_id, uid)
-    status_str = "🟢 Đang chạy ngầm" if sess["running"] else "🔴 Đang dừng"
+    status_str = "🟢 Đang chạy tự động 24/7" if sess["running"] else "🔴 Đang dừng"
     
     msg_text = (
         f"🎮 *QUẢN LÝ TÀI KHOẢN: `{uid}`*\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
-        f"📌 *Trạng thái luồng:* {status_str}\n"
+        f"📌 *Trạng thái:* {status_str}\n"
         f"🪙 *Đồng cược:* `{sess['asset_type']}`\n"
         f"💵 *Mức cược hiện tại:* `{sess['base_bet']}`\n"
         f"📈 *Hệ số nhân:* `x{sess['multiplier']}`\n"
@@ -205,7 +212,7 @@ def show_account_management(chat_id, message_id, uid):
     )
     
     markup = types.InlineKeyboardMarkup(row_width=2)
-    btn_toggle = types.InlineKeyboardButton("🚀 Bật Luồng" if not sess["running"] else "⏹️ Tắt Luồng", callback_data=f"acc_{uid}_toggle")
+    btn_toggle = types.InlineKeyboardButton("🚀 Bật Chạy Tự Động" if not sess["running"] else "⏹️ Tắt Bot", callback_data=f"acc_{uid}_toggle")
     btn_asset = types.InlineKeyboardButton(f"🪙 Coin: {sess['asset_type']}", callback_data=f"acc_{uid}_asset")
     btn_bet = types.InlineKeyboardButton(f"💵 Cược: {sess['base_bet']}", callback_data=f"acc_{uid}_bet")
     btn_status = types.InlineKeyboardButton("📊 Thống kê", callback_data=f"acc_{uid}_status")
@@ -221,7 +228,30 @@ def show_account_management(chat_id, message_id, uid):
     except:
         pass
 
-# API xử lý cho từng session độc lập
+@bot.callback_query_handlers(func=lambda call: call.data == "btn_home")
+def back_home(call):
+    chat_id = call.message.chat.id
+    with manager_lock:
+        accs = multi_accounts.get(chat_id, {})
+        total_accs = len(accs)
+        running_accs = sum(1 for s in accs.values() if s["running"])
+    msg_text = (
+        f"🎮 *XWORLD ESCAPE MASTER - BOT TỰ ĐỘNG*\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"📌 *Trạng thái:* Hệ thống đang sẵn sàng\n"
+        f"👥 *Tổng số nick đã thêm:* `{total_accs}`\n"
+        f"🟢 *Số nick đang chạy ngầm:* `{running_accs}`\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"👉 Dán Link game XWorld vào khung chat để thêm nick mới!"
+    )
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(types.InlineKeyboardButton("📋 Danh sách tài khoản & Quản lý", callback_data="btn_list_acc"))
+    try:
+        bot.edit_message_text(msg_text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+    except:
+        pass
+
+# API và Cơ chế chạy luồng độc lập
 def get_headers(sess):
     return {
         "Content-Type": "application/json",
@@ -356,7 +386,6 @@ def process_game_result(chat_id, sess, issue_id, is_killed, award, bet, killed_r
     sess["has_bet"] = False
     sess["betting_issue"] = None
 
-# Động cơ luồng độc lập cho từng tài khoản
 def run_bot_engine(chat_id, user_id):
     sess = get_account_session(chat_id, user_id)
     ws_url = "wss://api.escapemaster.net/escape_master/ws"
@@ -443,26 +472,11 @@ def run_bot_engine(chat_id, user_id):
                     "msg_type": "handle_enter_game",
                     "asset_type": sess["asset_type"],
                     "user_id": sess["user_id"],
-                    "user_secret_key": sess["secret_key"]
+                    "user_secret_key": sess["secret_Key"] if "secret_Key" in sess else sess["secret_key"]
                 })),
                 on_message=on_message,
                 on_error=lambda w, e: None,
                 on_close=lambda w, c, m: None
             )
             sess["ws_app"] = ws
-            ws.run_forever(ping_interval=15, ping_timeout=10)
-        except:
-            pass
-        time.sleep(3)
-
-def run_telebot_polling():
-    try:
-        bot.remove_webhook()
-    except:
-        pass
-    bot.infinity_polling(timeout=10, long_polling_timeout=5)
-
-if __name__ == "__main__":
-    Thread(target=run_telebot_polling, daemon=True).start()
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+   
