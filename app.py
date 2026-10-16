@@ -144,7 +144,6 @@ def callback_inline(call):
         refresh_menu(call.message)
         
     elif data == "set_base_bet":
-        # Xoay vòng mức cược gốc: 1.0 -> 2.0 -> 5.0 -> 10.0 -> 1.0
         bets = [1.0, 2.0, 5.0, 10.0]
         next_idx = (bets.index(sess["base_bet"]) + 1) % len(bets) if sess["base_bet"] in bets else 0
         sess["base_bet"] = bets[next_idx]
@@ -152,7 +151,6 @@ def callback_inline(call):
         refresh_menu(call.message)
         
     elif data == "set_mult":
-        # Xoay vòng hệ số nhân: 1.5 -> 2.0 -> 2.5 -> 3.0 -> 1.5
         mults = [1.5, 2.0, 2.5, 3.0]
         next_idx = (mults.index(sess["multiplier"]) + 1) % len(mults) if sess["multiplier"] in mults else 0
         sess["multiplier"] = mults[next_idx]
@@ -293,7 +291,7 @@ def run_bot_worker(chat_id):
                     if not is_killed:
                         sess["wins"] += 1
                         sess["consecutive_losses"] = 0
-                        sess["base_bet"] = 1.0 # Reset về mức gốc khi thắng
+                        sess["base_bet"] = 1.0
                         sess["skips_left"] = 0
                     else:
                         sess["losses"] += 1
@@ -350,5 +348,5 @@ def run_telebot_polling():
 
 if __name__ == "__main__":
     Thread(target=run_telebot_polling, daemon=True).start()
-    port = int(os.environ.com("PORT", 5000)) if hasattr(os.environ, "get") else 5000
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
