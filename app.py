@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-ESCAPE MASTER ULTIMATE MULTI-ACCOUNT BOT - FIXED SYNTAX
-======================================================
-- Sửa triệt để lỗi SyntaxError (try...except)
-- Giao diện menu /start trực quan, dễ thao tác
+ESCAPE MASTER ULTIMATE MULTI-ACCOUNT BOT - FIXED DECORATOR & SYNTAX
+==================================================================
+- Sửa lỗi @bot.callback_query_handlers (bỏ chữ 's' dư thừa)
+- Sửa toàn bộ cấu trúc try...except chuẩn Python
 - Hỗ trợ đa luồng nhiều tài khoản chạy song song độc lập
 - Cấu hình mốc cược: 3.8 (vô hạn), 10 (giới hạn 3 lần), 100, 1000, 10000 (vô hạn)
 """
@@ -479,6 +479,4 @@ def run_bot_engine(chat_id, user_id):
                     "msg_type": "handle_enter_game",
                     "asset_type": sess["asset_type"],
                     "user_id": sess["user_id"],
-                    "user_secret_key": sess["secret_key"]
-                })),
-         
+                    "user_secret_key": sess["sec
