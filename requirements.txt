@@ -1,3 +1,4 @@
 Flask
-websocket-client
 requests
+websocket-client
+pyTelegramBotAPI
