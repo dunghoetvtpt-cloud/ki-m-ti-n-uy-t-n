@@ -109,7 +109,7 @@ def callback_inline(call):
             cfg["global_running"] = True
             for uid, skey in cfg["accounts"].items():
                 Thread(target=run_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
-            bot.answer_callback_query(call.id, f"🚀 Đã bật cược TỰ ĐỘNG cho {len(cfg['accounts'])} tài khoản!")
+            bot.answer_callback_query(call.id, f"🚀 Đã bật cược TỰ ĐỘNG liên tục cho {len(cfg['accounts'])} tài khoản!")
         else:
             cfg["global_running"] = False
             for uid in cfg["accounts"]:
@@ -329,6 +329,11 @@ def stop_random_rooms(uid):
 def process_game_result(chat_id, cfg, uid, skey, issue_id, is_killed, award, bet, killed_room, my_room):
     stop_random_rooms(uid)
     acc_st = get_account_state(uid)
+    
+    # Đảm bảo reset trạng thái cược để vòng sau tự động chạy tiếp ngay lập tức
+    acc_st["has_bet"] = False
+    acc_st["betting_issue"] = None
+    
     profit = award - bet
     acc_st["total_bets"] += 1
     status_text = "THẮNG 🟢" if not is_killed else "THUA 🔴"
@@ -342,9 +347,11 @@ def process_game_result(chat_id, cfg, uid, skey, issue_id, is_killed, award, bet
         if acc_st["consecutive_losses"] >= cfg["loss_threshold"]:
             acc_st["skips_left"] = cfg["skip_rounds"]
             acc_st["consecutive_losses"] = 0
+            
     acc_st["total_profit"] += profit
     bal = get_balance(cfg, uid, skey)
     wr = (acc_st["wins"] / acc_st["total_bets"] * 100) if acc_st["total_bets"] > 0 else 0
+    
     msg = (
         f"🏁 *[NICK `{uid}`] KẾT QUẢ PHIÊN #{issue_id}*\n"
         f"Trạng thái: *{status_text}*\n"
@@ -354,8 +361,6 @@ def process_game_result(chat_id, cfg, uid, skey, issue_id, is_killed, award, bet
         f"💰 Số dư ví: `{bal:.4f} {cfg['asset_type']}`"
     )
     bot.send_message(chat_id, msg, parse_mode="Markdown")
-    acc_st["has_bet"] = False
-    acc_st["betting_issue"] = None
 
 def run_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)
@@ -369,26 +374,33 @@ def run_bot_engine(chat_id, uid, skey):
         try:
             data = json.loads(message)
             msg_type = data.get("msg_type", "")
+            
             if msg_type == "notify_count_down":
                 issue_id = data.get("issue_id")
                 count_down = data.get("count_down", 0)
+                
+                # Cứ sang phiên mới là cho phép đặt cược ngay lập tức, tự động hoàn toàn
                 if acc_st["current_issue"] != issue_id:
                     acc_st["current_issue"] = issue_id
                     acc_st["has_bet"] = False
+                    
                     if acc_st["skips_left"] > 0:
                         acc_st["skips_left"] -= 1
                         return
+                        
                     room = random.randint(1, 8)
                     amount = cfg["base_bet"]
+                    
                     if enter_room(cfg, uid, skey, room):
-                        time.sleep(0.3)
+                        time.sleep(0.2)
                         if place_bet(cfg, uid, skey, room, amount):
                             acc_st["has_bet"] = True
                             acc_st["betting_issue"] = issue_id
                             acc_st["watchdog_last_time"] = time.time()
                             start_random_rooms(cfg, uid, skey)
+                            
                             def check_api_backup():
-                                time.sleep(count_down + 5)
+                                time.sleep(max(count_down, 5) + 3)
                                 if acc_st["has_bet"] and acc_st["betting_issue"] == issue_id:
                                     res_data = get_my_joined(uid, skey, cfg["asset_type"], 1)
                                     items = res_data.get("items", [])
@@ -401,7 +413,10 @@ def run_bot_engine(chat_id, uid, skey):
                                             mr = item.get("room_id", "?")
                                             process_game_result(chat_id, cfg, uid, skey, issue_id, is_killed, award, bet_amt, kr, mr)
                                             return
+                                    # Fallback tự động reset cờ nếu không thấy trong API để tránh bị kẹt vĩnh viễn
+                                    acc_st["has_bet"] = False
                             Thread(target=check_api_backup, daemon=True).start()
+
             elif msg_type == "notify_result":
                 issue_id = data.get("issue_id")
                 if acc_st["has_bet"] and issue_id == acc_st["betting_issue"]:
@@ -411,6 +426,7 @@ def run_bot_engine(chat_id, uid, skey):
                     killed_room = data.get("killed_room", "?")
                     my_room = data.get("room_id", "?")
                     process_game_result(chat_id, cfg, uid, skey, issue_id, is_killed, award, bet_val, killed_room, my_room)
+
             elif msg_type == "notify_heartbeat":
                 ws.send(json.dumps({"msg_type": "heartbeat_ack"}))
         except Exception:
@@ -419,7 +435,8 @@ def run_bot_engine(chat_id, uid, skey):
     def watchdog_monitor():
         while cfg["global_running"]:
             time.sleep(5)
-            if time.time() - acc_st["watchdog_last_time"] > 360:
+            if time.time() - acc_st["watchdog_last_time"] > 300:
+                acc_st["has_bet"] = False  # Reset chống kẹt cờ khi mất kết nối lâu
                 if acc_st["ws_app"]:
                     try:
                         acc_st["ws_app"].close()
@@ -456,7 +473,4 @@ def run_telebot_polling():
         pass
     bot.infinity_polling(timeout=10, long_polling_timeout=5)
 
-if __name__ == "__main__":
-    Thread(target=run_telebot_polling, daemon=True).start()
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+if __name__ == "
