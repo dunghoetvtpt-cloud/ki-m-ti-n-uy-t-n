@@ -10,9 +10,6 @@ from threading import Thread, Lock, Event
 from decimal import Decimal, ROUND_DOWN
 from flask import Flask, request, redirect, jsonify, render_template_string
 
-# CẤU HÌNH DOMAIN CỐ ĐỊNH TRÊN RENDER
-RENDER_DOMAIN = "https://bot-tool-golike.onrender.com"
-
 TELEGRAM_BOT_TOKEN = "8513825480:AAGzOtGqQpkKJv1563LWU5_PcpexOJVi3HE"
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, parse_mode="Markdown")
 
@@ -83,8 +80,9 @@ def generate_key():
     db.commit()
     db.close()
     
-    # Gán đường dẫn cố định trang nhận key
-    raw_destination = f"{RENDER_DOMAIN}/get_key_page?key={license_key}"
+    # Tự động lấy chuẩn domain hiện tại đang truy cập
+    base_url = request.host_url.rstrip('/')
+    raw_destination = f"{base_url}/get_key_page?key={license_key}"
     
     long_url = requests.utils.quote(raw_destination)
     api_token = '68a76c1354de3f0da567ca17'
@@ -148,23 +146,14 @@ data_lock = Lock()
 waiting_for_key_users = set()
 verified_users = set()
 
-def get_user_config(chat_id):
-    with data_lock:
-        if chat_id not in user_data:
-            user_data[chat_id] = {
-                "active_game": None,
-                "waiting_for_link": None,
-                "waiting_for_bet": None,
-                "escape": {"accounts": {}, "global_running": False, "asset_type": "BUILD", "base_bet": 10.0},
-                "sprint": {"accounts": {}, "global_running": False, "asset_type": "BUILD", "bet_amount_total": "1"}
-            }
-        return user_data[chat_id]
-
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     chat_id = message.chat.id
     if chat_id not in verified_users:
-        generate_url = f"{RENDER_DOMAIN}/generate"
+        # Lấy trực tiếp từ webhook hoặc link động mặc định của Render app URL
+        render_domain = os.environ.get("RENDER_EXTERNAL_URL", "https://bot-tool-golike.onrender.com")
+        generate_url = f"{render_domain}/generate"
+        
         msg_text = (
             "🔒 *XWORLD LICENSE GATEWAY*\n"
             "━━━━━━━━━━━━━━━━━━━\n"
@@ -224,7 +213,6 @@ def handle_text_messages(message):
     if not text.startswith("/"):
         bot.reply_to(message, "💡 Gõ `/start` để mở bảng chọn game.")
 
-# --- KHỞI ĐỘNG SONG SONG FLASK VÀ BOT ---
 def run_telebot():
     while True:
         try:
