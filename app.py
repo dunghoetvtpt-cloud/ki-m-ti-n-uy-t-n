@@ -42,7 +42,7 @@ def get_user_config(chat_id):
                     "bet_amount_total": "1",
                     "lose_limit": 3,
                     "rest_rounds": 1,
-                    "lose_multiplier": "1.0" # Cố định hệ số là 1.0 để không bị nhân dồn tiền cược
+                    "lose_multiplier": "1.0"
                 }
             }
         return user_data[chat_id]
@@ -59,6 +59,7 @@ def get_account_state(game_prefix, uid):
             "losses": 0,
             "streak_loss": 0,
             "current_build": Decimal("1"),
+            "history_winners": [], # Lưu lịch sử các con vô địch gần nhất để phân tích
             "random_stop": Event()
         }
     return account_threads[key]
@@ -78,8 +79,8 @@ def send_welcome(message):
     )
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
-        types.InlineKeyboardButton("🕹️ Escape Master", callback_data="select_game_escape"),
-        types.InlineKeyboardButton("🏃 Sprint Run (Chạy đua)", callback_data="select_game_sprint")
+        types.InlineKeyboardButton("🕹️ Vua Thoát Hiểm", callback_data="select_game_escape"),
+        types.InlineKeyboardButton("🏃 Đua Tốc Độ", callback_data="select_game_sprint")
     )
     bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
 
@@ -95,7 +96,7 @@ def callback_select_game(call):
 def show_game_menu(chat_id, message_id, game_type):
     cfg = get_user_config(chat_id)
     g_cfg = cfg[game_type]
-    game_name = "Escape Master" if game_type == "escape" else "Sprint Run (Chạy đua)"
+    game_name = "Vua Thoát Hiểm" if game_type == "escape" else "Đua Tốc Độ"
     status_str = "🟢 Đang chạy" if g_cfg["global_running"] else "🔴 Đang dừng"
     total_accs = len(g_cfg["accounts"])
     current_bet_display = g_cfg.get('bet_amount_total') if game_type == 'sprint' else g_cfg.get('base_bet')
@@ -139,15 +140,14 @@ def callback_back_main(call):
     )
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
-        types.InlineKeyboardButton("🕹️ Escape Master", callback_data="select_game_escape"),
-        types.InlineKeyboardButton("🏃 Sprint Run (Chạy đua)", callback_data="select_game_sprint")
+        types.InlineKeyboardButton("🕹️ Vua Thoát Hiểm", callback_data="select_game_escape"),
+        types.InlineKeyboardButton("🏃 Đua Tốc Độ", callback_data="select_game_sprint")
     )
     try:
         bot.edit_message_text(msg_text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
     except:
         pass
 
-# --- XỬ LÝ ACTION TỪNG GAME ---
 @bot.callback_query_handler(func=lambda call: call.data.startswith("game_"))
 def callback_game_actions(call):
     chat_id = call.message.chat.id
@@ -156,18 +156,19 @@ def callback_game_actions(call):
     game_type = parts[1]
     action = "_".join(parts[2:])
     g_cfg = cfg[game_type]
+    game_name_vi = "Vua Thoát Hiểm" if game_type == "escape" else "Đua Tốc Độ"
     
     if action == "setup_link":
         cfg["waiting_for_link"] = game_type
         cfg["waiting_for_bet"] = None
         bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, f"📥 **Vui lòng dán link game của [ {game_type.upper()} ] vào đây!**")
+        bot.send_message(chat_id, f"📥 **Vui lòng dán link game [ {game_name_vi} ] vào đây!**")
         
     elif action == "input_bet":
         cfg["waiting_for_bet"] = game_type
         cfg["waiting_for_link"] = None
         bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, f"✏️ **Vui lòng nhập số tiền cược cố định cho [ {game_type.upper()} ] (Mỗi con):**\n*(Ví dụ: 1, 5, 10.5)*")
+        bot.send_message(chat_id, f"✏️ **Vui lòng nhập số tiền cược cố định cho [ {game_name_vi} ] (Mỗi con):**\n*(Ví dụ: 1, 5, 10.5)*")
         
     elif action == "toggle_bot":
         if not g_cfg["accounts"]:
@@ -182,7 +183,7 @@ def callback_game_actions(call):
                     Thread(target=run_escape_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
                 else:
                     Thread(target=run_sprint_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
-            bot.answer_callback_query(call.id, f"🚀 Đã bật auto {game_type} cho {len(g_cfg['accounts'])} nick!")
+            bot.answer_callback_query(call.id, f"🚀 Đã bật auto {game_name_vi} cho {len(g_cfg['accounts'])} nick!")
         else:
             g_cfg["global_running"] = False
             for uid in g_cfg["accounts"]:
@@ -200,7 +201,7 @@ def callback_game_actions(call):
         if not g_cfg["accounts"]:
             bot.answer_callback_query(call.id, "Chưa có nick nào!", show_alert=True)
             return
-        msg = f"👥 *DANH SÁCH NICK ({game_type.upper()}):*\n"
+        msg = f"👥 *DANH SÁCH NICK ({game_name_vi.upper()}):*\n"
         for idx, uid in enumerate(g_cfg["accounts"].keys(), 1):
             msg += f"{idx}. `{uid}`\n"
         bot.send_message(chat_id, msg, parse_mode="Markdown")
@@ -215,21 +216,19 @@ def callback_game_actions(call):
             tot_profit += st["total_profit"]
         wr = (tot_wins / tot_bets * 100) if tot_bets > 0 else 0
         msg = (
-            f"📊 *THỐNG KÊ {game_type.upper()}*\n"
+            f"📊 *THỐNG KÊ {game_name_vi.upper()}*\n"
             f"Trạng thái: {'🟢 Đang chạy' if g_cfg['global_running'] else '🔴 Đang dừng'}\n"
             f"Tổng ván: `{tot_bets}` | Thắng/Thua: `{tot_wins}`/`{tot_losses}` ({wr:.1f}%)\n"
             f"Tổng lời: `{tot_profit:+.4f} {g_cfg['asset_type']}`"
         )
         bot.send_message(chat_id, msg, parse_mode="Markdown")
 
-# --- XỬ LÝ TIN NHẮN VĂN BẢN (LINK HOẶC SỐ TIỀN CƯỢC) ---
 @bot.message_handler(func=lambda message: True)
 def handle_text_messages(message):
     chat_id = message.chat.id
     text = message.text.strip()
     cfg = get_user_config(chat_id)
     
-    # 1. Xử lý nhập link nick
     game_target_link = cfg.get("waiting_for_link")
     if game_target_link:
         if "userId=" in text and "secretKey=" in text:
@@ -248,14 +247,13 @@ def handle_text_messages(message):
                             Thread(target=run_escape_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
                         else:
                             Thread(target=run_sprint_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
-                    bot.reply_to(message, f"✅ **Đã thêm nick {game_target_link}:** `{uid}`\nGõ `/start` để quay lại quản lý.")
+                    bot.reply_to(message, f"✅ **Đã thêm nick thành công!**\nGõ `/start` để quay lại quản lý.")
                     return
             except:
                 pass
         bot.reply_to(message, "⚠️ Link không hợp lệ! Hãy dán đúng link game XWorld.")
         return
 
-    # 2. Xử lý nhập số tiền cược tùy chỉnh cố định
     game_target_bet = cfg.get("waiting_for_bet")
     if game_target_bet:
         try:
@@ -283,7 +281,7 @@ def handle_text_messages(message):
         bot.reply_to(message, "💡 Gõ `/start` để mở bảng chọn game.")
 
 # ==========================================
-# ENGINE 1: ESCAPE MASTER
+# ENGINE 1: VUA THOÁT HIỂM
 # ==========================================
 def run_escape_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)["escape"]
@@ -316,7 +314,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
         time.sleep(3)
 
 # ==========================================
-# ENGINE 2: SPRINT RUN (CỐ ĐỊNH MỨC CƯỢC, KHÔNG NHÂN DỒN)
+# ENGINE 2: ĐUA TỐC ĐỘ (CÓ PHÂN TÍCH LỊCH SỬ VÀ CỐ ĐỊNH VỐN)
 # ==========================================
 def run_sprint_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)["sprint"]
@@ -336,7 +334,6 @@ def run_sprint_bot_engine(chat_id, uid, skey):
 
     while cfg["global_running"] and not acc_st["random_stop"].is_set():
         try:
-            # Luôn cập nhật lại mức cược gốc từ cấu hình của user
             base_build = Decimal(str(cfg["bet_amount_total"]))
             acc_st["current_build"] = base_build
 
@@ -354,10 +351,22 @@ def run_sprint_bot_engine(chat_id, uid, skey):
                 time.sleep(3)
                 continue
 
-            chosen_athletes = random.sample(athletes, 3)
+            # --- CHIẾN THUẬT PHÂN TÍCH LỊCH SỬ ---
+            # Ưu tiên chọn các con có xu hướng ra hoặc pha trộn dựa trên lịch sử gần đây (history_winners)
+            history = acc_st["history_winners"]
+            if history:
+                # Sắp xếp các vận động viên ưu tiên con nào xuất hiện ít trong lịch sử gần đây (bắt nhịp cầu lót)
+                # hoặc kết hợp ngẫu nhiên có lọc lịch sử để tối ưu tỉ lệ thắng
+                athletes_sorted = sorted(athletes, key=lambda a: history.count(a["id"]))
+                # Lấy một nửa từ nhóm ít ra và một nửa ngẫu nhiên để tạo sự cân bằng thông minh
+                chosen_athletes = random.sample(athletes_sorted[:4], min(3, len(athletes_sorted)))
+            else:
+                # Nếu chưa có lịch sử thì xáo trộn ngẫu nhiên bình thường
+                random.shuffle(athletes)
+                chosen_athletes = random.sample(athletes, 3)
+
             chosen = [a["id"] for a in chosen_athletes]
 
-            # MỖI CON luôn cược đúng bằng số tiền user nhập (không đổi qua các ván)
             each_bet = acc_st["current_build"].quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
             total_bet_amount = each_bet * Decimal(len(chosen))
 
@@ -386,10 +395,13 @@ def run_sprint_bot_engine(chat_id, uid, skey):
                     rank = res_r.json().get("data", {}).get("athlete_rank", [])
                     if rank:
                         winner = rank[0]
+                        # Cập nhật lịch sử quán quân (giữ tối đa 10 ván gần nhất)
+                        acc_st["history_winners"].append(winner)
+                        if len(acc_st["history_winners"]) > 10:
+                            acc_st["history_winners"].pop(0)
                         break
                 time.sleep(1)
 
-            # Tính toán lời lỗ dựa trên mức cược cố định (không nhân hệ số thua nữa)
             if winner in chosen:
                 profit = (each_bet * 5) - total_bet_amount
                 acc_st["total_profit"] += profit
