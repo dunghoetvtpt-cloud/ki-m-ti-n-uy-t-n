@@ -59,7 +59,6 @@ def get_account_state(game_prefix, uid):
             "losses": 0,
             "streak_loss": 0,
             "current_build": Decimal("1"),
-            "history_winners": [],
             "random_stop": Event()
         }
     return account_threads[key]
@@ -314,7 +313,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
         time.sleep(3)
 
 # ==========================================
-# ENGINE 2: ĐUA TỐC ĐỘ (CANH ĐÚNG 5 GIÂY CUỐI ĐỂ CƯỢC)
+# ENGINE 2: ĐUA TỐC ĐỘ (LOGIC GỐC: CƯỢC NGAY BẮT ĐẦU VÁN)
 # ==========================================
 def run_sprint_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)["sprint"]
@@ -351,36 +350,15 @@ def run_sprint_bot_engine(chat_id, uid, skey):
                 time.sleep(3)
                 continue
 
-            # --- CHỜ ĐẾN ĐÚNG 5 GIÂY CUỐI CỦA VÁN ---
-            wait_target = float(expire) - 5.0
-            if wait_target > 0:
-                for _ in range(int(wait_target)):
-                    if not cfg["global_running"] or acc_st["random_stop"].is_set(): break
-                    time.sleep(1)
-
-            # Lấy lại thông tin sát nút 5 giây cuối để bảo đảm đồng bộ
-            r_check = requests.get(f"{base_api}/sprint/home?asset={cfg['asset_type']}", headers=headers, timeout=5)
-            if r_check.status_code == 200:
-                latest_data = r_check.json().get("data", {})
-                current_issue = latest_data.get("issue_id")
-                if current_issue == issue_id:
-                    athletes = latest_data.get("athlete_list", athletes)
-
-            # Phân tích lịch sử / lọc chọn 3 con
-            history = acc_st["history_winners"]
-            if history:
-                athletes_sorted = sorted(athletes, key=lambda a: history.count(a["id"]))
-                chosen_athletes = random.sample(athletes_sorted[:4], min(3, len(athletes_sorted)))
-            else:
-                random.shuffle(athletes)
-                chosen_athletes = random.sample(athletes, 3)
-
+            # Xáo trộn mạnh 6 vận động viên và chọn ngẫu nhiên 3 con
+            random.shuffle(athletes)
+            chosen_athletes = random.sample(athletes, 3)
             chosen = [a["id"] for a in chosen_athletes]
 
             each_bet = acc_st["current_build"].quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
             total_bet_amount = each_bet * Decimal(len(chosen))
 
-            # Bắn dồn dập 3 lệnh cược trong khoảng 5 giây cuối
+            # Bắn lệnh cược ngay lập tức khi phát hiện ván mới
             for aid in chosen:
                 payload = {
                     "issue_id": issue_id,
@@ -389,24 +367,25 @@ def run_sprint_bot_engine(chat_id, uid, skey):
                     "athlete_id": aid,
                     "bet_amount": float(each_bet)
                 }
-                requests.post(f"{base_api}/sprint/bet", json=payload, headers=headers, timeout=5)
-                time.sleep(0.05)
+                requests.post(f"{base_api}/sprint/bet", json=payload, headers=headers, timeout=10)
+                time.sleep(0.2)
 
             acc_st["total_bets"] += 1
 
-            # Chờ thêm để kết thúc ván và lấy kết quả
-            time.sleep(6)
+            # Chờ hết thời gian đếm ngược của ván đấu
+            wait_time = int(expire) if isinstance(expire, (int, float)) else 50
+            for _ in range(wait_time):
+                if not cfg["global_running"] or acc_st["random_stop"].is_set(): break
+                time.sleep(1)
 
+            # Lấy kết quả ván đấu
             winner = None
-            for _ in range(15):
+            for _ in range(30):
                 res_r = requests.get(f"{base_api}/sprint/issue_result?issue={issue_id}&asset={cfg['asset_type']}", headers=headers, timeout=10)
                 if res_r.status_code == 200:
                     rank = res_r.json().get("data", {}).get("athlete_rank", [])
                     if rank:
                         winner = rank[0]
-                        acc_st["history_winners"].append(winner)
-                        if len(acc_st["history_winners"]) > 10:
-                            acc_st["history_winners"].pop(0)
                         break
                 time.sleep(1)
 
