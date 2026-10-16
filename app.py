@@ -145,7 +145,6 @@ def check_key():
     finally:
         db.close()
 
-
 # --- TELEGRAM BOT & GAME LOGIC ---
 user_data = {}
 data_lock = Lock()
@@ -482,4 +481,4 @@ def run_sprint_bot_engine(chat_id, uid, skey):
         "user-login": "login_v2",
         "user-secret-key": skey
     }
-    while cfg["global_running"] and not acc_st["random_stop"].i
+    while cfg["global_running"] and not acc_st["random_stop"].is
