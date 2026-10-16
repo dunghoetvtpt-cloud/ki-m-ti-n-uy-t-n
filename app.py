@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """
-ESCAPE MASTER TELEGRAM INTERACTIVE BOT - RENDER 24/7
-===================================================
-- Điều khiển toàn bộ qua Telegram (Gõ /start để mở Menu)
-- Flask giữ server sống trên Render
+ESCAPE MASTER INTERACTIVE TELEGRAM BOT (POLLING)
+================================================
+- Dùng telebot Polling: gõ /start chắc chắn hiện Menu 100%
+- Flask giữ cổng HTTP cho Render không bị sập
 """
+import telebot
+from telebot import types
 import websocket
 import json
 import time
@@ -12,52 +14,22 @@ import random
 import requests
 import os
 from threading import Thread, Lock
-from flask import Flask, request as flask_request
+from flask import Flask
 
-# --- CẤU HÌNH TOKEN VÀ TRẠNG THÁI ---
+# --- CẤU HÌNH BOT TELEGRAM ---
 TELEGRAM_BOT_TOKEN = "8513825480:AAGzOtGqQpkKJv1563LWU5_PcpexOJVi3HE"
+bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, parse_mode="Markdown")
 
-# Lưu trữ cấu hình và trạng thái cho từng chat_id
-user_sessions = {}
-session_lock = Lock()
-
+# --- FLASK SERVER GIỮ RENDER SỐNG ---
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Telegram Escape Master Bot is running 24/7!"
+    return "Bot Telegram Escape Master đang chạy Polling 24/7!"
 
-@app.route(f'/{TELEGRAM_BOT_TOKEN}', methods=['POST'])
-def telegram_webhook():
-    update = flask_request.get_json()
-    if update:
-        # Xử lý tin nhắn text
-        if "message" in update:
-            chat_id = update["message"]["chat"]["id"]
-            text = update["message"].get("text", "").strip()
-            handle_telegram_message(chat_id, text)
-        
-        # Xử lý khi bấm nút inline keyboard
-        elif "callback_query" in update:
-            chat_id = update["callback_query"]["message"]["chat"]["id"]
-            data = update["callback_query"]["data"]
-            handle_telegram_callback(chat_id, data)
-            
-    return "OK", 200
-
-def send_telegram_markup(chat_id, text, reply_markup=None):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": chat_id, 
-        "text": text, 
-        "parse_mode": "Markdown"
-    }
-    if reply_markup:
-        payload["reply_markup"] = reply_markup
-    try:
-        requests.post(url, json=payload, timeout=5)
-    except:
-        pass
+# Quản lý session từng người dùng
+user_sessions = {}
+session_lock = Lock()
 
 def get_session(chat_id):
     with session_lock:
@@ -80,78 +52,92 @@ def get_session(chat_id):
             }
         return user_sessions[chat_id]
 
-def handle_telegram_message(chat_id, text):
+# --- XỬ LÝ LỆNH TELEGRAM ---
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    chat_id = message.chat.id
     sess = get_session(chat_id)
     
-    if text == "/start":
-        menu_text = (
-            f"🎮 *ESCAPE MASTER BOT MANAGER*\n\n"
-            f"Trạng thái: {'🟢 Đang chạy' if sess['running'] else '🔴 Đang dừng'}\n"
-            f"User ID: `{sess['user_id'] or 'Chưa cài'}`\n"
-            f"Mức cược: `{sess['base_bet']} {sess['asset_type']}`\n\n"
-            f"Vui lòng chọn lệnh bên dưới để cấu hình:"
-        )
-        keyboard = {
-            "inline_keyboard": [
-                [{"text": "⚙️ Cài đặt ID & Key", "callback_data": "set_creds"}],
-                [{"text": "🚀 Bật Bot", "callback_data": "start_bot"}, {"text": "⏹️ Tắt Bot", "callback_data": "stop_bot"}],
-                [{"text": "💰 Xem số dư & Thống kê", "callback_data": "status"}]
-            ]
-        }
-        send_telegram_markup(chat_id, menu_text, keyboard)
-        
-    elif text.startswith("/login"):
-        # Cú pháp: /login <user_id> <secret_key>
-        parts = text.split()
-        if len(parts) >= 3:
-            sess["user_id"] = parts[1]
-            sess["secret_key"] = parts[2]
-            send_telegram_markup(chat_id, f"✅ Đã lưu User ID: `{sess['user_id']}` thành công!")
-        else:
-            send_telegram_markup(chat_id, "⚠️ Sai cú pháp! Dùng: `/login <user_id> <secret_key>`")
+    status_str = "🟢 Đang hoạt động" if sess["running"] else "🔴 Đang dừng"
+    uid_str = sess["user_id"] if sess["user_id"] else "Chưa cài đặt"
+    
+    msg_text = (
+        f"🎮 *XWORLD ESCAPE MASTER BOT*\n\n"
+        f"📌 *Trạng thái:* {status_str}\n"
+        f"👤 *User ID:* `{uid_str}`\n"
+        f"💰 *Mức cược:* `{sess['base_bet']} {sess['asset_type']}`\n\n"
+        f"Bấm các nút bên dưới để điều khiển bot:"
+    )
+    
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    btn_login = types.InlineKeyboardButton("⚙️ Nhập ID & Key", callback_data="set_creds")
+    btn_start = types.InlineKeyboardButton("🚀 Bật Bot", callback_data="start_bot")
+    btn_stop = types.InlineKeyboardButton("⏹️ Tắt Bot", callback_data="stop_bot")
+    btn_status = types.InlineKeyboardButton("📊 Số dư & Thống kê", callback_data="status")
+    
+    markup.add(btn_login)
+    markup.add(btn_start, btn_stop)
+    markup.add(btn_status)
+    
+    bot.send_message(chat_id, msg_text, reply_markup=markup)
 
-def handle_telegram_callback(chat_id, data):
+@bot.message_handler(commands=['login'])
+def handle_login(message):
+    chat_id = message.chat.id
+    sess = get_session(chat_id)
+    parts = message.text.split()
+    
+    if len(parts) >= 3:
+        sess["user_id"] = parts[1].strip()
+        sess["secret_key"] = parts[2].strip()
+        bot.reply_to(message, f"✅ Đã lưu cấu hình thành công!\n• User ID: `{sess['user_id']}`\n\nGõ `/start` để mở lại menu.")
+    else:
+        bot.reply_to(message, "⚠️ Sai cú pháp!\nVui lòng gõ theo mẫu:\n`/login <User_ID> <Secret_Key>`\n\n*(Ví dụ: `/login 123456 abcxyz123`)*")
+
+@bot.callback_query_handler(func=lambda call: True)
+def callback_inline(call):
+    chat_id = call.message.chat.id
     sess = get_session(chat_id)
     
-    if data == "set_creds":
-        send_telegram_markup(chat_id, "💡 Hãy gửi cú pháp để đăng nhập:\n`/login <user_id> <secret_key>`\n\n*(Ví dụ: `/login 123456 abcxyz123`)*")
-    elif data == "start_bot":
+    if call.data == "set_creds":
+        bot.send_message(chat_id, "💡 Hãy gửi tin nhắn theo cú pháp sau để nhập tài khoản:\n\n`/login <User_ID> <Secret_Key>`\n\n*(Ví dụ: `/login 100234988 abc123def456`)*")
+    
+    elif call.data == "start_bot":
         if not sess["user_id"] or not sess["secret_key"]:
-            send_telegram_markup(chat_id, "⚠️ Bạn chưa nhập User ID và Secret Key! Hãy bấm Cài đặt ID & Key trước.")
+            bot.send_message(chat_id, "⚠️ Bạn chưa cài đặt User ID và Secret Key!\nHãy bấm nút *⚙️ Nhập ID & Key* trước.")
             return
         if sess["running"]:
-            send_telegram_markup(chat_id, "⚠️ Bot của bạn đang chạy rồi!")
+            bot.send_message(chat_id, "⚠️ Bot của bạn đang chạy rồi!")
             return
-        
+            
         sess["running"] = True
         Thread(target=run_bot_worker, args=(chat_id,), daemon=True).start()
-        send_telegram_markup(chat_id, "🚀 Đã khởi động bot thành công! Bot bắt đầu cược ngầm 24/7.")
+        bot.send_message(chat_id, "🚀 *Đã bật Bot thành công!* Bot bắt đầu cược ngầm 24/7 và báo kết quả về đây.")
         
-    elif data == "stop_bot":
+    elif call.data == "stop_bot":
         sess["running"] = False
         if sess["ws"]:
             try:
                 sess["ws"].close()
             except:
                 pass
-        send_telegram_markup(chat_id, "⏹️ Đã dừng bot thành công.")
+        bot.send_message(chat_id, "⏹️ *Đã dừng Bot thành công.*")
         
-    elif data == "status":
+    elif call.data == "status":
         bal = get_balance_for_session(sess)
         wr = (sess["wins"] / sess["total_bets"] * 100) if sess["total_bets"] > 0 else 0
         msg = (
-            f"📊 *THỐNG KÊ BOT*\n"
+            f"📊 *THỐNG KÊ BOT*\n\n"
             f"Trạng thái: {'🟢 Đang chạy' if sess['running'] else '🔴 Đang dừng'}\n"
-            f"Số dư ví: `{bal:.4f} {sess['asset_type']}`\n"
-            f"Tổng cược: `{sess['total_bets']}` trận\n"
-            f"Thắng/Thua: `{sess['wins']}` / `{sess['losses']}` (WR: `{wr:.1f}%`)\n"
-            f"Tổng lợi nhuận: `{sess['total_profit']:+.4f} {sess['asset_type']}`"
+            f"Số dư hiện tại: `{bal:.4f} {sess['asset_type']}`\n"
+            f"Tổng số ván: `{sess['total_bets']}`\n"
+            f"Thắng / Thua: `{sess['wins']}` / `{sess['losses']}` (WR: `{wr:.1f}%`)\n"
+            f"Tổng lời/lỗ: `{sess['total_profit']:+.4f} {sess['asset_type']}`"
         )
-        send_telegram_markup(chat_id, msg)
+        bot.send_message(chat_id, msg)
 
 def get_balance_for_session(sess):
     try:
-        session_req = requests.Session()
         headers = {
             "Content-Type": "application/json",
             "user-id": str(sess["user_id"]),
@@ -160,7 +146,7 @@ def get_balance_for_session(sess):
             "Accept": "application/json",
             "xb-language": "vi-VN"
         }
-        resp = session_req.post(
+        resp = requests.post(
             "https://api.escapemaster.net/escape_game/get_user_asset",
             json={"asset_type": sess["asset_type"], "user_id": int(sess["user_id"])},
             headers=headers,
@@ -207,7 +193,6 @@ def run_bot_worker(chat_id):
                     room = random.randint(1, 8)
                     amount = sess["base_bet"]
                     
-                    # Vào phòng
                     r1 = requests.post("https://api.escapemaster.net/escape_game/enter_room",
                                        json={"asset_type": sess["asset_type"], "user_id": int(sess["user_id"]), "room_id": room},
                                        headers=headers, timeout=5)
@@ -223,12 +208,12 @@ def run_bot_worker(chat_id):
                 issue_id = data.get("issue_id")
                 if sess["has_bet"] and issue_id == sess["current_issue"]:
                     award = float(data.get("award_amount", 0))
-                    bet = float(data.get("bet_amount", 0))
-                    is_killed = not (award > bet)
+                    bet_val = float(data.get("bet_amount", 0))
+                    is_killed = not (award > bet_val)
                     killed_room = data.get("killed_room", "?")
                     my_room = data.get("room_id", "?")
                     
-                    profit = award - bet
+                    profit = award - bet_val
                     sess["total_bets"] += 1
                     status_text = "THẮNG 🟢" if not is_killed else "THUA 🔴"
                     
@@ -253,17 +238,17 @@ def run_bot_worker(chat_id):
                         f"*ESCAPE MASTER* - #{issue_id}\n"
                         f"Trạng thái: *{status_text}*\n"
                         f"Phòng: `{my_room}` | Bẫy: `{killed_room}`\n"
-                        f"Cược: `{bet:.4f}` | Thưởng: `{award:.4f}`\n"
+                        f"Cược: `{bet_val:.4f}` | Thưởng: `{award:.4f}`\n"
                         f"Lời trận: `{profit:+.4f}`\n"
                         f"Tổng lời: `{sess['total_profit']:+.4f}` (WR: {wr:.1f}%)\n"
-                        f"Số dư: `{bal:.4f} {sess['asset_type']}`"
+                        f"Số dư ví: `{bal:.4f} {sess['asset_type']}`"
                     )
-                    send_telegram_markup(chat_id, msg)
+                    bot.send_message(chat_id, msg)
                     sess["has_bet"] = False
 
             elif msg_type == "notify_heartbeat":
                 ws.send(json.dumps({"msg_type": "heartbeat_ack"}))
-        except Exception as e:
+        except:
             pass
 
     while sess["running"]:
@@ -282,16 +267,18 @@ def run_bot_worker(chat_id):
             pass
         time.sleep(3)
 
-# Thiết lập tự động Webhook với Telegram khi khởi động app
-def setup_webhook():
-    time.sleep(2)
-    # Lấy domain render tự động hoặc dùng domain cố định
-    render_external_url = os.environ.get("RENDER_EXTERNAL_URL")
-    if render_external_url:
-        webhook_url = f"{render_external_url}/{TELEGRAM_BOT_TOKEN}"
-        requests.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook?url={webhook_url}")
+def run_telebot_polling():
+    # Xóa Webhook cũ để tránh xung đột Polling
+    try:
+        bot.remove_webhook()
+    except:
+        pass
+    bot.infinity_polling(timeout=10, long_polling_timeout=5)
 
 if __name__ == "__main__":
-    Thread(target=setup_webhook, daemon=True).start()
+    # Chạy Telegram Polling ở thread riêng
+    Thread(target=run_telebot_polling, daemon=True).start()
+    
+    # Chạy Flask Server ở thread chính để giữ Render sống
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
