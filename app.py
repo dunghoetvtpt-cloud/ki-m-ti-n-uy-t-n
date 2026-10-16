@@ -1,89 +1,169 @@
 #!/usr/bin/env python3
 """
-ESCAPE MASTER AUTO BET BOT - WEB DASHBOARD FOR RENDER
-=====================================================
-- Giao diện Web Dashboard điều khiển trực tiếp trên trình duyệt
-- Console Real-time hiển thị nhật ký cược
-- WebSocket Worker chạy ngầm 24/7
+ESCAPE MASTER TELEGRAM INTERACTIVE BOT - RENDER 24/7
+===================================================
+- Điều khiển toàn bộ qua Telegram (Gõ /start để mở Menu)
+- Flask giữ server sống trên Render
 """
-
 import websocket
 import json
 import time
 import random
 import requests
 import os
-from datetime import datetime
 from threading import Thread, Lock
-from flask import Flask, render_template_string, request, jsonify
+from flask import Flask, request as flask_request
+
+# --- CẤU HÌNH TOKEN VÀ TRẠNG THÁI ---
+TELEGRAM_BOT_TOKEN = "8513825480:AAGzOtGqQpkKJv1563LWU5_PcpexOJVi3HE"
+
+# Lưu trữ cấu hình và trạng thái cho từng chat_id
+user_sessions = {}
+session_lock = Lock()
 
 app = Flask(__name__)
 
-# Global State & Locks
-state_lock = Lock()
-bot_running = False
-log_messages = []
+@app.route('/')
+def home():
+    return "Telegram Escape Master Bot is running 24/7!"
 
-# Cấu hình bot mặc định
-config = {
-    "user_id": "",
-    "user_secret_key": "",
-    "telegram_token": "8513825480:AAGzOtGqQpkKJv1563LWU5_PcpexOJVi3HE",
-    "chat_id": "",
-    "asset_type": "BUILD",
-    "base_bet": 1.0,
-    "loss_threshold": 2,
-    "skip_rounds": 3,
-    "multiplier": 2.0
-}
+@app.route(f'/{TELEGRAM_BOT_TOKEN}', methods=['POST'])
+def telegram_webhook():
+    update = flask_request.get_json()
+    if update:
+        # Xử lý tin nhắn text
+        if "message" in update:
+            chat_id = update["message"]["chat"]["id"]
+            text = update["message"].get("text", "").strip()
+            handle_telegram_message(chat_id, text)
+        
+        # Xử lý khi bấm nút inline keyboard
+        elif "callback_query" in update:
+            chat_id = update["callback_query"]["message"]["chat"]["id"]
+            data = update["callback_query"]["data"]
+            handle_telegram_callback(chat_id, data)
+            
+    return "OK", 200
 
-session = requests.Session()
-session.headers.update({
-    "User-Agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36",
-    "Origin": "https://escapemaster.net",
-    "Accept": "application/json",
-    "Accept-Language": "vi-VN,vi;q=0.9",
-    "Referer": "https://escapemaster.net/",
-})
-
-def add_log(msg):
-    global log_messages
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    formatted_msg = f"[{timestamp}] {msg}"
-    print(formatted_msg)
-    with state_lock:
-        log_messages.append(formatted_msg)
-        if len(log_messages) > 100:
-            log_messages.pop(0)
-
-def send_telegram(message):
-    token = config.get("telegram_token")
-    chat_id = config.get("chat_id")
-    if not chat_id or not token:
-        return
+def send_telegram_markup(chat_id, text, reply_markup=None):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": chat_id, 
+        "text": text, 
+        "parse_mode": "Markdown"
+    }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
     try:
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
         requests.post(url, json=payload, timeout=5)
     except:
         pass
 
-def get_headers():
-    return {
-        "Content-Type": "application/json",
-        "user-id": str(config.get("user_id")),
-        "user-login": "login_v2",
-        "user-secret-key": str(config.get("user_secret_key")),
-        "Accept": "application/json",
-        "xb-language": "vi-VN"
-    }
+def get_session(chat_id):
+    with session_lock:
+        if chat_id not in user_sessions:
+            user_sessions[chat_id] = {
+                "user_id": "",
+                "secret_key": "",
+                "asset_type": "BUILD",
+                "base_bet": 1.0,
+                "running": False,
+                "ws": None,
+                "total_profit": 0.0,
+                "total_bets": 0,
+                "wins": 0,
+                "losses": 0,
+                "consecutive_losses": 0,
+                "skips_left": 0,
+                "current_issue": None,
+                "has_bet": False
+            }
+        return user_sessions[chat_id]
 
-def get_balance():
+def handle_telegram_message(chat_id, text):
+    sess = get_session(chat_id)
+    
+    if text == "/start":
+        menu_text = (
+            f"🎮 *ESCAPE MASTER BOT MANAGER*\n\n"
+            f"Trạng thái: {'🟢 Đang chạy' if sess['running'] else '🔴 Đang dừng'}\n"
+            f"User ID: `{sess['user_id'] or 'Chưa cài'}`\n"
+            f"Mức cược: `{sess['base_bet']} {sess['asset_type']}`\n\n"
+            f"Vui lòng chọn lệnh bên dưới để cấu hình:"
+        )
+        keyboard = {
+            "inline_keyboard": [
+                [{"text": "⚙️ Cài đặt ID & Key", "callback_data": "set_creds"}],
+                [{"text": "🚀 Bật Bot", "callback_data": "start_bot"}, {"text": "⏹️ Tắt Bot", "callback_data": "stop_bot"}],
+                [{"text": "💰 Xem số dư & Thống kê", "callback_data": "status"}]
+            ]
+        }
+        send_telegram_markup(chat_id, menu_text, keyboard)
+        
+    elif text.startswith("/login"):
+        # Cú pháp: /login <user_id> <secret_key>
+        parts = text.split()
+        if len(parts) >= 3:
+            sess["user_id"] = parts[1]
+            sess["secret_key"] = parts[2]
+            send_telegram_markup(chat_id, f"✅ Đã lưu User ID: `{sess['user_id']}` thành công!")
+        else:
+            send_telegram_markup(chat_id, "⚠️ Sai cú pháp! Dùng: `/login <user_id> <secret_key>`")
+
+def handle_telegram_callback(chat_id, data):
+    sess = get_session(chat_id)
+    
+    if data == "set_creds":
+        send_telegram_markup(chat_id, "💡 Hãy gửi cú pháp để đăng nhập:\n`/login <user_id> <secret_key>`\n\n*(Ví dụ: `/login 123456 abcxyz123`)*")
+    elif data == "start_bot":
+        if not sess["user_id"] or not sess["secret_key"]:
+            send_telegram_markup(chat_id, "⚠️ Bạn chưa nhập User ID và Secret Key! Hãy bấm Cài đặt ID & Key trước.")
+            return
+        if sess["running"]:
+            send_telegram_markup(chat_id, "⚠️ Bot của bạn đang chạy rồi!")
+            return
+        
+        sess["running"] = True
+        Thread(target=run_bot_worker, args=(chat_id,), daemon=True).start()
+        send_telegram_markup(chat_id, "🚀 Đã khởi động bot thành công! Bot bắt đầu cược ngầm 24/7.")
+        
+    elif data == "stop_bot":
+        sess["running"] = False
+        if sess["ws"]:
+            try:
+                sess["ws"].close()
+            except:
+                pass
+        send_telegram_markup(chat_id, "⏹️ Đã dừng bot thành công.")
+        
+    elif data == "status":
+        bal = get_balance_for_session(sess)
+        wr = (sess["wins"] / sess["total_bets"] * 100) if sess["total_bets"] > 0 else 0
+        msg = (
+            f"📊 *THỐNG KÊ BOT*\n"
+            f"Trạng thái: {'🟢 Đang chạy' if sess['running'] else '🔴 Đang dừng'}\n"
+            f"Số dư ví: `{bal:.4f} {sess['asset_type']}`\n"
+            f"Tổng cược: `{sess['total_bets']}` trận\n"
+            f"Thắng/Thua: `{sess['wins']}` / `{sess['losses']}` (WR: `{wr:.1f}%`)\n"
+            f"Tổng lợi nhuận: `{sess['total_profit']:+.4f} {sess['asset_type']}`"
+        )
+        send_telegram_markup(chat_id, msg)
+
+def get_balance_for_session(sess):
     try:
-        resp = session.post(
+        session_req = requests.Session()
+        headers = {
+            "Content-Type": "application/json",
+            "user-id": str(sess["user_id"]),
+            "user-login": "login_v2",
+            "user-secret-key": str(sess["secret_key"]),
+            "Accept": "application/json",
+            "xb-language": "vi-VN"
+        }
+        resp = session_req.post(
             "https://api.escapemaster.net/escape_game/get_user_asset",
-            json={"asset_type": config.get("asset_type"), "user_id": int(config.get("user_id"))},
-            headers=get_headers(),
+            json={"asset_type": sess["asset_type"], "user_id": int(sess["user_id"])},
+            headers=headers,
             timeout=10
         )
         data = resp.json()
@@ -93,377 +173,125 @@ def get_balance():
         pass
     return 0.0
 
-def enter_room(room_id):
-    try:
-        resp = session.post(
-            "https://api.escapemaster.net/escape_game/enter_room",
-            json={"asset_type": config.get("asset_type"), "user_id": int(config.get("user_id")), "room_id": room_id},
-            headers=get_headers(),
-            timeout=5
-        )
-        return resp.json().get("code") == 0
-    except:
-        return False
-
-def place_bet(room_id, amount):
-    try:
-        resp = session.post(
-            "https://api.escapemaster.net/escape_game/bet",
-            json={"asset_type": config.get("asset_type"), "user_id": int(config.get("user_id")), "room_id": room_id, "bet_amount": amount},
-            headers=get_headers(),
-            timeout=5
-        )
-        return resp.json().get("code") == 0
-    except:
-        return False
-
-class BotEngine:
-    def __init__(self):
-        self.current_bet = 1.0
-        self.consecutive_losses = 0
-        self.total_profit = 0.0
-        self.total_bets = 0
-        self.wins = 0
-        self.losses = 0
-        self.skips_left = 0
-        self.current_issue = None
-        self.has_bet = False
-        self.ws = None
-
-    def reset(self):
-        self.current_bet = float(config.get("base_bet", 1.0))
-        self.consecutive_losses = 0
-        self.total_profit = 0.0
-        self.total_bets = 0
-        self.wins = 0
-        self.losses = 0
-        self.skips_left = 0
-        self.current_issue = None
-        self.has_bet = False
-
-    def process_result(self, issue_id, is_killed, award, bet, killed_room, my_room):
-        profit = award - bet
-        self.total_bets += 1
-        status_text = "THẮNG 🟢" if not is_killed else "THUA 🔴"
-        
-        if not is_killed:
-            self.wins += 1
-            self.consecutive_losses = 0
-            self.current_bet = float(config.get("base_bet", 1.0))
-            self.skips_left = 0
-        else:
-            self.losses += 1
-            self.consecutive_losses += 1
-            if self.consecutive_losses >= int(config.get("loss_threshold", 2)):
-                self.skips_left = int(config.get("skip_rounds", 3))
-            else:
-                self.current_bet *= float(config.get("multiplier", 2.0))
-        
-        self.total_profit += profit
-        wr = (self.wins / self.total_bets * 100) if self.total_bets > 0 else 0
-        
-        add_log(f"🏁 Phiên #{issue_id} | {status_text} | Lời: {profit:+.4f} | Tổng lời: {self.total_profit:+.4f}")
-        
-        balance = get_balance()
-        msg = (
-            f"*ESCAPE MASTER CLOUD* - #{issue_id}\n"
-            f"Trạng thái: *{status_text}*\n"
-            f"Phòng chọn: `{my_room}` | Phòng bẫy: `{killed_room}`\n"
-            f"Tiền cược: `{bet:.4f}` | Thưởng: `{award:.4f}`\n"
-            f"Lợi nhuận: `{profit:+.4f}` {config.get('asset_type')}\n"
-            f"Tổng lời: `{self.total_profit:+.4f}` (WR: {wr:.1f}%)\n"
-            f"Số dư ví: `{balance:.4f}` {config.get('asset_type')}"
-        )
-        Thread(target=send_telegram, args=(msg,), daemon=True).start()
-
-    def should_skip(self):
-        if self.skips_left > 0:
-            self.skips_left -= 1
-            return True
-        return False
-
-bot_engine = BotEngine()
-
-def on_message(ws, message):
-    global bot_running
-    if not bot_running:
-        ws.close()
-        return
-
-    try:
-        data = json.loads(message)
-        msg_type = data.get("msg_type", "")
-        
-        if msg_type == "notify_count_down":
-            issue_id = data.get("issue_id")
-            count_down = data.get("count_down", 0)
-            
-            if bot_engine.current_issue != issue_id:
-                bot_engine.current_issue = issue_id
-                bot_engine.has_bet = False
-                
-                add_log(f"▶️ Phiên #{issue_id} bắt đầu | Đếm ngược: {count_down}s")
-                
-                if not bot_engine.should_skip():
-                    room = random.randint(1, 8)
-                    amount = bot_engine.current_bet
-                    
-                    if enter_room(room):
-                        time.sleep(0.2)
-                        if place_bet(room, amount):
-                            bot_engine.has_bet = True
-                            add_log(f"✅ Cược thành công: {amount} {config.get('asset_type')} vào Phòng [{room}]")
-                        else:
-                            add_log(f"❌ Đặt cược thất bại Phòng [{room}]")
-                    else:
-                        add_log(f"❌ Không thể vào Phòng [{room}]")
-                else:
-                    add_log(f"⏸️ Bỏ qua phiên này theo cài đặt chiến thuật.")
-
-        elif msg_type == "notify_result":
-            issue_id = data.get("issue_id")
-            if bot_engine.has_bet and issue_id == bot_engine.current_issue:
-                award = float(data.get("award_amount", 0))
-                bet = float(data.get("bet_amount", 0))
-                is_killed = not (award > bet)
-                killed_room = data.get("killed_room", "?")
-                my_room = data.get("room_id", "?")
-                
-                bot_engine.process_result(issue_id, is_killed, award, bet, killed_room, my_room)
-                bot_engine.has_bet = False
-
-        elif msg_type == "notify_heartbeat":
-            ws.send(json.dumps({"msg_type": "heartbeat_ack"}))
-    except Exception as e:
-        add_log(f"⚠️ Lỗi tin nhắn WebSocket: {e}")
-
-def on_error(ws, error):
-    add_log(f"❌ WebSocket Error: {error}")
-
-def on_close(ws, close_status_code, close_msg):
-    add_log("🔌 Kết nối WebSocket đã đóng.")
-
-def on_open(ws):
-    add_log("🚀 Kết nối WebSocket thành công!")
-    ws.send(json.dumps({
-        "msg_type": "handle_enter_game",
-        "asset_type": config.get("asset_type"),
-        "user_id": int(config.get("user_id")),
-        "user_secret_key": config.get("user_secret_key")
-    }))
-    bal = get_balance()
-    add_log(f"💰 Số dư tài khoản: {bal:.4f} {config.get('asset_type')}")
-    send_telegram(f"🚀 *Bot Cloud XWorld đã khởi động!*\n💰 Số dư: `{bal:.4f}` {config.get('asset_type')}")
-
-def worker_thread():
-    global bot_running
-    add_log("⚙️ Đang kết nối tới server game...")
-    bot_engine.reset()
+def run_bot_worker(chat_id):
+    sess = get_session(chat_id)
+    ws_url = "wss://api.escapemaster.net/escape_game/ws"
     
-    while bot_running:
+    def on_message(ws, message):
+        if not sess["running"]:
+            ws.close()
+            return
         try:
-            ws_url = "wss://api.escapemaster.net/escape_game/ws"
+            data = json.loads(message)
+            msg_type = data.get("msg_type", "")
+            
+            headers = {
+                "Content-Type": "application/json",
+                "user-id": str(sess["user_id"]),
+                "user-login": "login_v2",
+                "user-secret-key": str(sess["secret_key"]),
+                "Accept": "application/json",
+                "xb-language": "vi-VN"
+            }
+            
+            if msg_type == "notify_count_down":
+                issue_id = data.get("issue_id")
+                if sess["current_issue"] != issue_id:
+                    sess["current_issue"] = issue_id
+                    sess["has_bet"] = False
+                    
+                    if sess["skips_left"] > 0:
+                        sess["skips_left"] -= 1
+                        return
+                    
+                    room = random.randint(1, 8)
+                    amount = sess["base_bet"]
+                    
+                    # Vào phòng
+                    r1 = requests.post("https://api.escapemaster.net/escape_game/enter_room",
+                                       json={"asset_type": sess["asset_type"], "user_id": int(sess["user_id"]), "room_id": room},
+                                       headers=headers, timeout=5)
+                    if r1.json().get("code") == 0:
+                        time.sleep(0.2)
+                        r2 = requests.post("https://api.escapemaster.net/escape_game/bet",
+                                           json={"asset_type": sess["asset_type"], "user_id": int(sess["user_id"]), "room_id": room, "bet_amount": amount},
+                                           headers=headers, timeout=5)
+                        if r2.json().get("code") == 0:
+                            sess["has_bet"] = True
+
+            elif msg_type == "notify_result":
+                issue_id = data.get("issue_id")
+                if sess["has_bet"] and issue_id == sess["current_issue"]:
+                    award = float(data.get("award_amount", 0))
+                    bet = float(data.get("bet_amount", 0))
+                    is_killed = not (award > bet)
+                    killed_room = data.get("killed_room", "?")
+                    my_room = data.get("room_id", "?")
+                    
+                    profit = award - bet
+                    sess["total_bets"] += 1
+                    status_text = "THẮNG 🟢" if not is_killed else "THUA 🔴"
+                    
+                    if not is_killed:
+                        sess["wins"] += 1
+                        sess["consecutive_losses"] = 0
+                        sess["base_bet"] = 1.0
+                        sess["skips_left"] = 0
+                    else:
+                        sess["losses"] += 1
+                        sess["consecutive_losses"] += 1
+                        if sess["consecutive_losses"] >= 2:
+                            sess["skips_left"] = 3
+                        else:
+                            sess["base_bet"] *= 2.0
+                    
+                    sess["total_profit"] += profit
+                    bal = get_balance_for_session(sess)
+                    wr = (sess["wins"] / sess["total_bets"] * 100) if sess["total_bets"] > 0 else 0
+                    
+                    msg = (
+                        f"*ESCAPE MASTER* - #{issue_id}\n"
+                        f"Trạng thái: *{status_text}*\n"
+                        f"Phòng: `{my_room}` | Bẫy: `{killed_room}`\n"
+                        f"Cược: `{bet:.4f}` | Thưởng: `{award:.4f}`\n"
+                        f"Lời trận: `{profit:+.4f}`\n"
+                        f"Tổng lời: `{sess['total_profit']:+.4f}` (WR: {wr:.1f}%)\n"
+                        f"Số dư: `{bal:.4f} {sess['asset_type']}`"
+                    )
+                    send_telegram_markup(chat_id, msg)
+                    sess["has_bet"] = False
+
+            elif msg_type == "notify_heartbeat":
+                ws.send(json.dumps({"msg_type": "heartbeat_ack"}))
+        except Exception as e:
+            pass
+
+    while sess["running"]:
+        try:
             ws = websocket.WebSocketApp(
                 ws_url,
                 header={"Origin": "https://escapemaster.net", "User-Agent": "Mozilla/5.0"},
-                on_open=on_open,
+                on_open=lambda w: w.send(json.dumps({"msg_type": "handle_enter_game", "asset_type": sess["asset_type"], "user_id": int(sess["user_id"]), "user_secret_key": sess["secret_key"]})),
                 on_message=on_message,
-                on_error=on_error,
-                on_close=on_close
+                on_error=lambda w, e: None,
+                on_close=lambda w, c, m: None
             )
-            bot_engine.ws = ws
+            sess["ws"] = ws
             ws.run_forever(ping_interval=15, ping_timeout=10)
-        except Exception as e:
-            add_log(f"⚠️ Thử kết nối lại sau 3s: {e}")
+        except:
+            pass
         time.sleep(3)
 
-# HTML Web Dashboard Template
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="vi">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>XWorld Escape Master Cloud Bot</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        body { background-color: #121212; color: #e0e0e0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .card { background-color: #1e1e1e; border: 1px solid #333; border-radius: 12px; margin-bottom: 20px; }
-        .form-control, .form-select { background-color: #2b2b2b; border: 1px solid #444; color: #fff; }
-        .form-control:focus, .form-select:focus { background-color: #333; color: #fff; border-color: #0d6efd; box-shadow: none; }
-        #console { background-color: #000; color: #00ff66; font-family: monospace; height: 350px; overflow-y: auto; padding: 15px; border-radius: 8px; border: 1px solid #333; }
-        .badge-status { font-size: 1rem; padding: 8px 16px; border-radius: 20px; }
-    </style>
-</head>
-<body>
-<div class="container py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>🎮 XWorld Escape Master Cloud Bot</h2>
-        <span id="statusBadge" class="badge bg-secondary badge-status">Đang dừng</span>
-    </div>
-
-    <div class="row">
-        <!-- Panel Cấu Hình -->
-        <div class="col-lg-5">
-            <div class="card p-3">
-                <h5 class="card-title mb-3 text-primary">⚙️ Cấu hình Tài khoản & Chiến thuật</h5>
-                <form id="configForm">
-                    <div class="mb-2">
-                        <label class="form-label">User ID</label>
-                        <input type="number" class="form-control" name="user_id" id="user_id" required placeholder="Nhập User ID">
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label">User Secret Key</label>
-                        <input type="text" class="form-control" name="user_secret_key" id="user_secret_key" required placeholder="Nhập Secret Key">
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label">Telegram Chat ID</label>
-                        <input type="text" class="form-control" name="chat_id" id="chat_id" placeholder="Nhập Telegram Chat ID">
-                    </div>
-                    <div class="row g-2 mb-2">
-                        <div class="col-6">
-                            <label class="form-label">Loại tài sản</label>
-                            <select class="form-select" name="asset_type" id="asset_type">
-                                <option value="BUILD">BUILD</option>
-                                <option value="USDT">USDT</option>
-                            </select>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label">Mức cược cơ bản</label>
-                            <input type="number" step="0.1" class="form-control" name="base_bet" id="base_bet" value="1.0">
-                        </div>
-                    </div>
-                    <div class="row g-2 mb-3">
-                        <div class="col-4">
-                            <label class="form-label">Thua nghỉ</label>
-                            <input type="number" class="form-control" name="loss_threshold" id="loss_threshold" value="2">
-                        </div>
-                        <div class="col-4">
-                            <label class="form-label">Số trận nghỉ</label>
-                            <input type="number" class="form-control" name="skip_rounds" id="skip_rounds" value="3">
-                        </div>
-                        <div class="col-4">
-                            <label class="form-label">Hệ số nhân</label>
-                            <input type="number" step="0.1" class="form-control" name="multiplier" id="multiplier" value="2.0">
-                        </div>
-                    </div>
-                    <div class="d-grid gap-2">
-                        <button type="button" id="startBtn" onclick="startBot()" class="btn btn-success fw-bold">▶️ Bắt đầu Chạy Bot</button>
-                        <button type="button" id="stopBtn" onclick="stopBot()" class="btn btn-danger fw-bold" disabled>⏹️ Dừng Bot</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <!-- Live Console Terminal -->
-        <div class="col-lg-7">
-            <div class="card p-3">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h5 class="card-title text-success mb-0">📟 Live Terminal Log</h5>
-                    <button class="btn btn-sm btn-outline-light" onclick="clearConsole()">Xóa màn hình</button>
-                </div>
-                <div id="console">--- Vui lòng nhập cấu hình và bấm Bắt đầu ---</div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<script>
-    function updateLogs() {
-        fetch('/get_logs')
-            .then(res => res.json())
-            .then(data => {
-                const consoleDiv = document.getElementById('console');
-                consoleDiv.innerHTML = data.logs.join('<br>');
-                consoleDiv.scrollTop = consoleDiv.scrollHeight;
-
-                const badge = document.getElementById('statusBadge');
-                const startBtn = document.getElementById('startBtn');
-                const stopBtn = document.getElementById('stopBtn');
-
-                if (data.running) {
-                    badge.className = 'badge bg-success badge-status';
-                    badge.innerText = 'Đang hoạt động 24/7';
-                    startBtn.disabled = true;
-                    stopBtn.disabled = false;
-                } else {
-                    badge.className = 'badge bg-secondary badge-status';
-                    badge.innerText = 'Đang dừng';
-                    startBtn.disabled = false;
-                    stopBtn.disabled = true;
-                }
-            });
-    }
-
-    function startBot() {
-        const formData = new FormData(document.getElementById('configForm'));
-        fetch('/start', { method: 'POST', body: formData })
-            .then(res => res.json())
-            .then(data => alert(data.message));
-    }
-
-    function stopBot() {
-        fetch('/stop', { method: 'POST' })
-            .then(res => res.json())
-            .then(data => alert(data.message));
-    }
-
-    function clearConsole() {
-        fetch('/clear_logs', { method: 'POST' });
-    }
-
-    setInterval(updateLogs, 1500);
-</script>
-</body>
-</html>
-"""
-
-@app.route('/')
-def index():
-    return render_template_string(HTML_TEMPLATE)
-
-@app.route('/get_logs')
-def get_logs():
-    with state_lock:
-        return jsonify({"logs": log_messages, "running": bot_running})
-
-@app.route('/start', methods=['POST'])
-def start_bot():
-    global bot_running, config
-    if bot_running:
-        return jsonify({"message": "Bot đang chạy rồi!"})
-    
-    config["user_id"] = request.form.get("user_id", "").strip()
-    config["user_secret_key"] = request.form.get("user_secret_key", "").strip()
-    config["chat_id"] = request.form.get("chat_id", "").strip()
-    config["asset_type"] = request.form.get("asset_type", "BUILD")
-    config["base_bet"] = float(request.form.get("base_bet", 1.0))
-    config["loss_threshold"] = int(request.form.get("loss_threshold", 2))
-    config["skip_rounds"] = int(request.form.get("skip_rounds", 3))
-    config["multiplier"] = float(request.form.get("multiplier", 2.0))
-
-    if not config["user_id"] or not config["user_secret_key"]:
-        return jsonify({"message": "Vui lòng điền đầy đủ User ID và Secret Key!"})
-
-    bot_running = True
-    add_log("▶️ Khởi động Bot Worker...")
-    Thread(target=worker_thread, daemon=True).start()
-    return jsonify({"message": "Đã bắt đầu chạy bot!"})
-
-@app.route('/stop', methods=['POST'])
-def stop_bot():
-    global bot_running
-    bot_running = False
-    add_log("⏹️ Đang dừng Bot...")
-    return jsonify({"message": "Đã gửi lệnh dừng bot!"})
-
-@app.route('/clear_logs', methods=['POST'])
-def clear_logs():
-    global log_messages
-    with state_lock:
-        log_messages = []
-    return jsonify({"status": "ok"})
+# Thiết lập tự động Webhook với Telegram khi khởi động app
+def setup_webhook():
+    time.sleep(2)
+    # Lấy domain render tự động hoặc dùng domain cố định
+    render_external_url = os.environ.get("RENDER_EXTERNAL_URL")
+    if render_external_url:
+        webhook_url = f"{render_external_url}/{TELEGRAM_BOT_TOKEN}"
+        requests.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook?url={webhook_url}")
 
 if __name__ == "__main__":
+    Thread(target=setup_webhook, daemon=True).start()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
