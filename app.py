@@ -22,7 +22,6 @@ def home():
 user_data = {}
 data_lock = Lock()
 
-# Quản lý trạng thái nhập key và xác thực của người dùng
 waiting_for_key_users = set()
 verified_users = set()
 
@@ -72,7 +71,6 @@ def get_account_state(game_prefix, uid):
 def send_welcome(message):
     chat_id = message.chat.id
     
-    # Kiểm tra xem tài khoản đã xác thực bản quyền hay chưa
     if chat_id not in verified_users:
         msg_text = (
             "🔒 *XWORLD LICENSE GATEWAY*\n"
@@ -253,8 +251,14 @@ def handle_text_messages(message):
         waiting_for_key_users.remove(chat_id)
         api_url = f"https://kiemtien.infy.click/check_key.php?key={text}&telegram_id={chat_id}"
         
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5'
+        }
+        
         try:
-            response = requests.get(api_url, timeout=10)
+            response = requests.get(api_url, headers=headers, timeout=15)
             res_data = response.json()
             
             if res_data.get("status") == "success":
