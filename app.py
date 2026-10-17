@@ -255,13 +255,13 @@ def callback_back_game(call):
     game_type = call.data.split("_")[3]
     bot.answer_callback_query(call.id)
     show_game_menu(chat_id, call.message.message_id, game_type)
-    @bot.message_handler(func=lambda message: True)
+
+@bot.message_handler(func=lambda message: True)
 def handle_text_messages(message):
     chat_id = message.chat.id
     text = message.text.strip()
     cfg = get_user_config(chat_id)
     
-    # 1. Xử lý nhập Key (Tự động xóa tin nhắn dán key)
     if cfg.get("waiting_for_key"):
         try:
             bot.delete_message(chat_id, message.message_id)
@@ -290,7 +290,6 @@ def handle_text_messages(message):
                     pass
         return
 
-    # 2. Xử lý Link Nick
     game_target_link = cfg.get("waiting_for_link")
     if game_target_link:
         try: bot.delete_message(chat_id, message.message_id)
@@ -325,7 +324,6 @@ def handle_text_messages(message):
             except: pass
         return
 
-    # 3. Xử lý Cược
     game_target_bet = cfg.get("waiting_for_bet")
     if game_target_bet:
         try: bot.delete_message(chat_id, message.message_id)
@@ -358,9 +356,6 @@ def handle_text_messages(message):
         try: bot.delete_message(chat_id, message.message_id)
         except: pass
 
-# ==========================================
-# ENGINE 1: VUA THOÁT HIỂM
-# ==========================================
 def run_escape_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)["escape"]
     acc_st = get_account_state("escape", uid)
@@ -421,9 +416,6 @@ def run_escape_bot_engine(chat_id, uid, skey):
         except: pass
         time.sleep(3)
 
-# ==========================================
-# ENGINE 2: ĐUA TỐC ĐỘ
-# ==========================================
 def run_sprint_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)["sprint"]
     acc_st = get_account_state("sprint", uid)
@@ -433,62 +425,4 @@ def run_sprint_bot_engine(chat_id, uid, skey):
         try:
             if acc_st["streak_loss"] >= cfg["lose_limit"]:
                 acc_st["streak_loss"] = 0
-                acc_st["current_build"] = Decimal(str(cfg["bet_amount_total"]))
-                time.sleep(cfg["rest_rounds"] * 60)
-                continue
-            r = requests.get(f"{base_api}/sprint/home?asset={cfg['asset_type']}", headers=headers, timeout=10)
-            if r.status_code != 200:
-                time.sleep(3)
-                continue
-            res_data = r.json().get("data", {})
-            issue_id = res_data.get("issue_id")
-            expire = res_data.get("expire_seconds", 50)
-            athletes = res_data.get("athlete_list", [])
-            if len(athletes) < 3:
-                time.sleep(3)
-                continue
-            random.shuffle(athletes)
-            chosen = [a["id"] for a in random.sample(athletes, 3)]
-            each_bet = acc_st["current_build"].quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
-            total_bet_amount = each_bet * Decimal(len(chosen))
-            for aid in chosen:
-                requests.post(f"{base_api}/sprint/bet", json={"issue_id": issue_id, "bet_group": "winner", "asset_type": cfg["asset_type"], "athlete_id": aid, "bet_amount": float(each_bet)}, headers=headers, timeout=10)
-                time.sleep(0.2)
-            acc_st["total_bets"] += 1
-            for _ in range(int(expire) if isinstance(expire, (int, float)) else 50):
-                if not cfg["global_running"] or acc_st["random_stop"].is_set(): break
-                time.sleep(1)
-            winner = None
-            for _ in range(30):
-                res_r = requests.get(f"{base_api}/sprint/issue_result?issue={issue_id}&asset={cfg['asset_type']}", headers=headers, timeout=10)
-                if res_r.status_code == 200:
-                    rank = res_r.json().get("data", {}).get("athlete_rank", [])
-                    if rank:
-                        winner = rank[0]
-                        break
-                time.sleep(1)
-            if winner in chosen:
-                acc_st["total_profit"] += (each_bet * Decimal("5")) - total_bet_amount
-                acc_st["wins"] += 1
-                acc_st["streak_loss"] = 0
-                acc_st["current_build"] = Decimal(str(cfg["bet_amount_total"]))
-            else:
-                acc_st["total_profit"] -= total_bet_amount
-                acc_st["losses"] += 1
-                acc_st["streak_loss"] += 1
-                acc_st["current_build"] = acc_st["current_build"] * Decimal(str(cfg["lose_multiplier"]))
-        except: pass
-        time.sleep(2)
-
-def run_telebot_polling():
-    while True:
-        try:
-            bot.remove_webhook()
-            time.sleep(1)
-            bot.infinity_polling(timeout=10, long_polling_timeout=5, skip_pending=True)
-        except: time.sleep(5)
-
-if __name__ == "__main__":
-    Thread(target=run_telebot_polling, daemon=True).start()
-    bot.infinity_polling(skip_pending=True)
-    
+               
