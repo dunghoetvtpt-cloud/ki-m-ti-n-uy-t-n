@@ -307,7 +307,8 @@ def handle_text_messages(message):
     if game_target_bet:
         try:
             val = float(text)
-            if val <= 0: raise ValueError()
+            if val <= 0:
+                raise ValueError("Mức cược phải lớn hơn 0")
             
             g_cfg = cfg[game_target_bet]
             if game_target_bet == "sprint":
@@ -329,7 +330,7 @@ def handle_text_messages(message):
         bot.reply_to(message, "💡 Gõ `/start` để mở bảng chọn game.")
 
 # ==========================================
-# ENGINE 1: VUA THOÁT HIỂM (ĐÃ CỘNG TỶ LỆ THẮNG/THUA)
+# ENGINE 1: VUA THOÁT HIỂM
 # ==========================================
 def run_escape_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)["escape"]
@@ -387,13 +388,12 @@ def run_escape_bot_engine(chat_id, uid, skey):
                                             if k_room_int in cfg["killer_stats"]:
                                                 cfg["killer_stats"][k_room_int] += 1
                                             
-                                            # Đếm thắng/thua cho tài khoản
                                             if room == k_room_int:
                                                 acc_st["losses"] += 1
                                                 acc_st["total_profit"] -= bet_amt
                                             else:
                                                 acc_st["wins"] += 1
-                                                acc_st["total_profit"] += (bet_amt * Decimal("0.1")) # Lời ước tính khi thoát hiểm thành công
+                                                acc_st["total_profit"] += (bet_amt * Decimal("0.1"))
                                             break
                                         except:
                                             pass
@@ -463,4 +463,8 @@ def run_sprint_bot_engine(chat_id, uid, skey):
             wait_time = int(expire) if isinstance(expire, (int, float)) else 50
             for _ in range(wait_time):
                 if not cfg["global_running"] or acc_st["random_stop"].is_set(): break
-               
+                time.sleep(1)
+
+            winner = None
+            for _ in range(30):
+                res_r = requ
