@@ -397,7 +397,7 @@ def callback_back_game(call):
     try: bot.answer_callback_query(call.id)
     except: pass
     show_game_menu(chat_id, call.message.message_id, game_type)
-    @bot.message_handler(func=lambda message: True)
+@bot.message_handler(func=lambda message: True)
 def handle_text_messages(message):
     chat_id = message.chat.id; text = message.text.strip(); cfg = get_user_config(chat_id)
     if cfg.get("waiting_for_key"):
@@ -580,4 +580,4 @@ if __name__ == "__main__":
     Thread(target=run_telebot_polling, daemon=True).start()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-    
+        
