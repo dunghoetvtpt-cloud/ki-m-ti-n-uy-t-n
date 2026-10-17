@@ -256,3 +256,122 @@ def callback_back_game(call):
     except:
         pass
     show_game_menu(chat_id, call.message.message_id, game_type)
+@bot.message_handler(func=lambda message: True)
+def handle_text_messages(message):
+    chat_id = message.chat.id
+    text = message.text.strip()
+    cfg = get_user_config(chat_id)
+    
+    if cfg.get("waiting_for_key"):
+        try:
+            bot.delete_message(chat_id, message.message_id)
+        except:
+            pass
+        
+        prompt_id = cfg.get("prompt_msg_id")
+        res = verify_key_with_server(text, str(chat_id))
+        
+        if res.get("status") == "success":
+            cfg["has_valid_key"] = True
+            cfg["waiting_for_key"] = False
+            if prompt_id:
+                try:
+                    show_main_menu(chat_id, prompt_id, is_new=False)
+                except:
+                    pass
+        else:
+            if prompt_id:
+                markup = types.InlineKeyboardMarkup()
+                web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
+                markup.add(types.InlineKeyboardButton("🌐 Lấy Key Mới", url=web_url))
+                try:
+                    bot.edit_message_text("⚠️ **Key không hợp lệ hoặc đã hết hạn!** Thử lại:", chat_id, prompt_id, reply_markup=markup, parse_mode="Markdown")
+                except:
+                    pass
+        return
+
+    game_target_link = cfg.get("waiting_for_link")
+    if game_target_link:
+        try:
+            bot.delete_message(chat_id, message.message_id)
+        except:
+            pass
+        prompt_id = cfg.get("prompt_msg_id")
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🔙 Trở lại", callback_data=f"back_to_game_{game_target_link}"))
+
+        if "userId=" in text and "secretKey=" in text:
+            try:
+                parsed_url = urlparse(text)
+                query_params = parse_qs(parsed_url.query)
+                uid_str = query_params.get("userId", [None])[0]
+                skey = query_params.get("secretKey", [None])[0]
+                if uid_str and skey:
+                    uid = int(uid_str)
+                    cfg[game_target_link]["accounts"][uid] = skey
+                    cfg["waiting_for_link"] = None
+                    g_cfg = cfg[game_target_link]
+                    if g_cfg["global_running"]:
+                        if game_target_link == "escape":
+                            Thread(target=run_escape_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
+                        else:
+                            Thread(target=run_sprint_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
+                    if prompt_id:
+                        try:
+                            bot.edit_message_text(f"✅ **Thêm nick thành công!** (`{uid}`)", chat_id, prompt_id, reply_markup=markup, parse_mode="Markdown")
+                        except:
+                            pass
+                    return
+            except:
+                pass
+        if prompt_id:
+            try:
+                bot.edit_message_text("⚠️ **Link lỗi!** Thử lại:", chat_id, prompt_id, reply_markup=markup, parse_mode="Markdown")
+            except:
+                pass
+        return
+
+    game_target_bet = cfg.get("waiting_for_bet")
+    if game_target_bet:
+        try:
+            bot.delete_message(chat_id, message.message_id)
+        except:
+            pass
+        prompt_id = cfg.get("prompt_msg_id")
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🔙 Trở lại", callback_data=f"back_to_game_{game_target_bet}"))
+        try:
+            val = float(text)
+            if val <= 0:
+                raise ValueError()
+            g_cfg = cfg[game_target_bet]
+            if game_target_bet == "sprint":
+                g_cfg["bet_amount_total"] = str(val)
+                for uid in g_cfg["accounts"]:
+                    get_account_state("sprint", uid)["current_build"] = Decimal(str(val))
+            else:
+                g_cfg["base_bet"] = val
+            cfg["waiting_for_bet"] = None
+            if prompt_id:
+                try:
+                    bot.edit_message_text(f"✅ **Đã cập nhật cược:** `{val}`", chat_id, prompt_id, reply_markup=markup, parse_mode="Markdown")
+                except:
+                    pass
+            return
+        except:
+            if prompt_id:
+                try:
+                    bot.edit_message_text("⚠️ **Số tiền lỗi!** Nhập lại số:", chat_id, prompt_id, reply_markup=markup, parse_mode="Markdown")
+                except:
+                    pass
+            return
+
+    if not text.startswith("/"):
+        try:
+            bot.delete_message(chat_id, message.message_id)
+        except:
+            pass
+
+if __name__ == "__main__":
+    bot.infinity_polling(skip_pending=True)
+                               
