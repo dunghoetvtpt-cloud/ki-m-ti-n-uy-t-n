@@ -10,8 +10,7 @@ from threading import Thread, Lock, Event
 from decimal import Decimal, ROUND_DOWN
 from flask import Flask
 
-# 🔐 Bảo mật Token bằng biến môi trường trên Render
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "DÁN_TOKEN_VÀO_ĐÂY_NẾU_CHƯA_CÀI_ENV")
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, parse_mode="Markdown")
 
 app = Flask(__name__)
@@ -22,6 +21,18 @@ def home():
 
 user_data = {}
 data_lock = Lock()
+
+# Danh sách tên phòng rút gọn để hiển thị 2 cột cho đẹp
+ROOM_NAMES = {
+    1: "Nhà Kho",
+    2: "P.trò chuyện",
+    3: "P.tài vụ",
+    4: "Phòng họp",
+    5: "P.giám sát",
+    6: "P.nhân sự",
+    7: "P.giám đốc",
+    8: "Văn phòng"
+}
 
 def get_user_config(chat_id):
     with data_lock:
@@ -35,7 +46,7 @@ def get_user_config(chat_id):
                     "global_running": False,
                     "asset_type": "BUILD",
                     "base_bet": 10.0,
-                    "killer_stats": {i: 0 for i in range(1, 9)} # Thống kê số lần Sát thủ vào phòng 1-8
+                    "killer_stats": {i: 0 for i in range(1, 9)}
                 },
                 "sprint": {
                     "accounts": {},
@@ -225,12 +236,21 @@ def callback_game_actions(call):
             f"Tổng lời: `{tot_profit:+.4f} {g_cfg['asset_type']}`"
         )
         
+        # Hiển thị thống kê Sát Thủ dạng 2 cột gọn gàng
         if game_type == "escape":
-            msg += "\n━━━━━━━━━━━━━━━━━━━\n👹 *THỐNG KÊ SÁT THỦ VÀO PHÒNG:*\n"
+            msg += "\n━━━━━━━━━━━━━━━━━━━\n👹 *THỐNG KÊ SÁT THỦ:*\n"
             k_stats = g_cfg.get("killer_stats", {})
-            for room_id in range(1, 9):
-                count = k_stats.get(room_id, 0)
-                msg += f"🚪 Phòng {room_id}: `{count}` lần\n"
+            
+            # Ghép cặp phòng (1-2, 3-4, 5-6, 7-8)
+            pairs = [(1, 2), (3, 4), (5, 6), (7, 8)]
+            for r1, r2 in pairs:
+                name1 = ROOM_NAMES.get(r1, f"P.{r1}")
+                count1 = k_stats.get(r1, 0)
+                
+                name2 = ROOM_NAMES.get(r2, f"P.{r2}")
+                count2 = k_stats.get(r2, 0)
+                
+                msg += f"`{name1:<12}: {count1}`  |  `{name2:<12}: {count2}`\n"
                 
         bot.send_message(chat_id, msg, parse_mode="Markdown")
 
@@ -329,8 +349,8 @@ def run_escape_bot_engine(chat_id, uid, skey):
                                       json={"asset_type": cfg["asset_type"], "user_id": uid, "room_id": room, "bet_amount": float(bet_amt)},
                                       headers=headers, timeout=10)
                         
-                        time.sleep(12)
-                        for _ in range(8):
+                        time.sleep(20)
+                        for _ in range(10):
                             res_resp = requests.get(url, params={"asset": cfg["asset_type"], "page": 1, "page_size": 5},
                                                     headers=headers, timeout=10)
                             if res_resp.status_code == 200:
@@ -338,11 +358,21 @@ def run_escape_bot_engine(chat_id, uid, skey):
                                 matched = [it for it in res_items if str(it.get("issue_id")) == latest_issue]
                                 if matched:
                                     item_res = matched[0]
-                                    killer_room = item_res.get("killer_room_id") or item_res.get("killer_room")
-                                    if killer_room and int(killer_room) in cfg["killer_stats"]:
-                                        cfg["killer_stats"][int(killer_room)] += 1
-                                    break
-                            time.sleep(2)
+                                    killer_room = (
+                                        item_res.get("killer_room_id") or 
+                                        item_res.get("killer_room") or 
+                                        item_res.get("killer") or 
+                                        item_res.get("room_killed")
+                                    )
+                                    if killer_room is not None:
+                                        try:
+                                            k_room_int = int(killer_room)
+                                            if k_room_int in cfg["killer_stats"]:
+                                                cfg["killer_stats"][k_room_int] += 1
+                                                break
+                                        except:
+                                            pass
+                            time.sleep(3)
         except:
             pass
         time.sleep(3)
