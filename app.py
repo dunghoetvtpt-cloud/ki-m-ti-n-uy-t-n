@@ -10,6 +10,7 @@ from threading import Thread, Lock, Event
 from decimal import Decimal, ROUND_DOWN
 from flask import Flask
 
+# 🔐 Khai báo Token
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, parse_mode="Markdown")
 
@@ -22,6 +23,7 @@ def home():
 user_data = {}
 data_lock = Lock()
 
+# Danh sách tên phòng đầy đủ tiếng Việt trong Vua Thoát Hiểm
 ROOM_NAMES = {
     1: "Nhà Kho",
     2: "Phòng trò chuyện",
@@ -133,7 +135,7 @@ def show_game_menu(chat_id, message_id, game_type):
     )
     try:
         bot.edit_message_text(msg_text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
-    except:
+    except Exception:
         bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda call: call.data == "back_to_main")
@@ -156,7 +158,7 @@ def callback_back_main(call):
     )
     try:
         bot.edit_message_text(msg_text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-    except:
+    except Exception:
         pass
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("game_"))
@@ -262,7 +264,7 @@ def callback_game_actions(call):
         )
         try:
             bot.edit_message_text(msg, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-        except:
+        except Exception:
             pass
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("back_to_game_"))
@@ -296,9 +298,9 @@ def handle_text_messages(message):
                             Thread(target=run_escape_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
                         else:
                             Thread(target=run_sprint_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
-                    bot.reply_to(message, f"✅ **Đã thêm nick thành công!**\nGõ `/start` để mở menu điều khiển.")
+                    bot.reply_to(message, "✅ **Đã thêm nick thành công!**\nGõ `/start` để mở menu điều khiển.")
                     return
-            except:
+            except Exception:
                 pass
         bot.reply_to(message, "⚠️ Link không hợp lệ! Hãy dán đúng link game XWorld.")
         return
@@ -395,15 +397,15 @@ def run_escape_bot_engine(chat_id, uid, skey):
                                                 acc_st["wins"] += 1
                                                 acc_st["total_profit"] += (bet_amt * Decimal("0.1"))
                                             break
-                                        except:
+                                        except Exception:
                                             pass
                             time.sleep(3)
-        except:
+        except Exception:
             pass
         time.sleep(3)
 
 # ==========================================
-# ENGINE 2: ĐUA TỐC ĐỘ
+# ENGINE 2: ĐUA TỐC ĐỘ (MARTINGALE FULL LOGIC)
 # ==========================================
 def run_sprint_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)["sprint"]
@@ -423,8 +425,13 @@ def run_sprint_bot_engine(chat_id, uid, skey):
 
     while cfg["global_running"] and not acc_st["random_stop"].is_set():
         try:
-            base_build = Decimal(str(cfg["bet_amount_total"]))
-            acc_st["current_build"] = base_build
+            # 1. Kiểm tra chuỗi thua để tạm nghỉ nếu chạm giới hạn
+            if acc_st["streak_loss"] >= cfg["lose_limit"]:
+                acc_st["streak_loss"] = 0
+                acc_st["current_build"] = Decimal(str(cfg["bet_amount_total"]))
+                rest_time = cfg["rest_rounds"] * 60
+                time.sleep(rest_time)
+                continue
 
             r = requests.get(f"{base_api}/sprint/home?asset={cfg['asset_type']}", headers=headers, timeout=10)
             if r.status_code != 200:
@@ -440,31 +447,20 @@ def run_sprint_bot_engine(chat_id, uid, skey):
                 time.sleep(3)
                 continue
 
+            # Pick 3 VĐV ngẫu nhiên
             random.shuffle(athletes)
             chosen_athletes = random.sample(athletes, 3)
             chosen = [a["id"] for a in chosen_athletes]
 
+            # Tính mức cược hiện tại (có nhân hệ số gấp thếp khi thua)
             each_bet = acc_st["current_build"].quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
             total_bet_amount = each_bet * Decimal(len(chosen))
 
+            # Tiến hành đặt cược
             for aid in chosen:
                 payload = {
                     "issue_id": issue_id,
                     "bet_group": "winner",
                     "asset_type": cfg["asset_type"],
                     "athlete_id": aid,
-                    "bet_amount": float(each_bet)
-                }
-                requests.post(f"{base_api}/sprint/bet", json=payload, headers=headers, timeout=10)
-                time.sleep(0.2)
-
-            acc_st["total_bets"] += 1
-
-            wait_time = int(expire) if isinstance(expire, (int, float)) else 50
-            for _ in range(wait_time):
-                if not cfg["global_running"] or acc_st["random_stop"].is_set(): break
-                time.sleep(1)
-
-            winner = None
-            for _ in range(30):
-                res_r = requ
+      
