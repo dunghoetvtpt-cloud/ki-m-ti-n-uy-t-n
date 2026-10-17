@@ -22,15 +22,14 @@ def home():
 user_data = {}
 data_lock = Lock()
 
-# Danh sách tên phòng rút gọn để hiển thị 2 cột cho đẹp
 ROOM_NAMES = {
     1: "Nhà Kho",
-    2: "P.trò chuyện",
-    3: "P.tài vụ",
+    2: "Phòng trò chuyện",
+    3: "Phòng tài vụ",
     4: "Phòng họp",
-    5: "P.giám sát",
-    6: "P.nhân sự",
-    7: "P.giám đốc",
+    5: "Phòng giám sát",
+    6: "Phòng nhân sự",
+    7: "Phòng giám đốc",
     8: "Văn phòng"
 }
 
@@ -129,7 +128,7 @@ def show_game_menu(chat_id, message_id, game_type):
         types.InlineKeyboardButton(f"🪙 Đổi Coin ({g_cfg['asset_type']})", callback_data=f"game_{game_type}_toggle_asset"),
         types.InlineKeyboardButton("✏️ Nhập Số Tiền Cược", callback_data=f"game_{game_type}_input_bet"),
         types.InlineKeyboardButton("👥 Danh sách Nick", callback_data=f"game_{game_type}_list"),
-        types.InlineKeyboardButton("📊 Thống kê", callback_data=f"game_{game_type}_status"),
+        types.InlineKeyboardButton("📊 Xem Thống kê", callback_data=f"game_{game_type}_status"),
         types.InlineKeyboardButton("🔙 Quay lại chọn Game", callback_data="back_to_main")
     )
     try:
@@ -195,7 +194,7 @@ def callback_game_actions(call):
                     Thread(target=run_escape_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
                 else:
                     Thread(target=run_sprint_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
-            bot.answer_callback_query(call.id, f"🚀 Đã bật auto {game_name_vi} cho {len(g_cfg['accounts'])} nick!")
+            bot.answer_callback_query(call.id, f"🚀 Đã bật auto {game_name_vi}!")
         else:
             g_cfg["global_running"] = False
             for uid in g_cfg["accounts"]:
@@ -216,9 +215,13 @@ def callback_game_actions(call):
         msg = f"👥 *DANH SÁCH NICK ({game_name_vi.upper()}):*\n"
         for idx, uid in enumerate(g_cfg["accounts"].keys(), 1):
             msg += f"{idx}. `{uid}`\n"
-        bot.send_message(chat_id, msg, parse_mode="Markdown")
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🔙 Trở lại Menu", callback_data=f"back_to_game_{game_type}"))
+        bot.edit_message_text(msg, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
         
     elif action == "status":
+        bot.answer_callback_query(call.id, "🔄 Đã cập nhật thống kê!")
         tot_bets, tot_wins, tot_losses, tot_profit = 0, 0, 0, Decimal("0")
         for uid in g_cfg["accounts"]:
             st = get_account_state(game_type, uid)
@@ -226,33 +229,48 @@ def callback_game_actions(call):
             tot_wins += st["wins"]
             tot_losses += st["losses"]
             tot_profit += st["total_profit"]
-        wr = (tot_wins / tot_bets * 100) if tot_bets > 0 else 0
+        
+        wr = (tot_wins / tot_bets * 100) if tot_bets > 0 else 0.0
         
         msg = (
             f"📊 *THỐNG KÊ {game_name_vi.upper()}*\n"
             f"━━━━━━━━━━━━━━━━━━━\n"
-            f"Trạng thái: {'🟢 Đang chạy' if g_cfg['global_running'] else '🔴 Đang dừng'}\n"
-            f"Tổng ván: `{tot_bets}` | Thắng/Thua: `{tot_wins}`/`{tot_losses}` ({wr:.1f}%)\n"
-            f"Tổng lời: `{tot_profit:+.4f} {g_cfg['asset_type']}`"
+            f"📌 Trạng thái: {'🟢 Đang chạy' if g_cfg['global_running'] else '🔴 Đang dừng'}\n"
+            f"🎲 Tổng ván đánh: `{tot_bets}`\n"
+            f"🏆 Thắng/Thua: `{tot_wins}` / `{tot_losses}`\n"
+            f"📈 Tỷ lệ thắng: `{wr:.1f}%`\n"
+            f"💵 Tổng Lời/Lỗ: `{tot_profit:+.4f} {g_cfg['asset_type']}`"
         )
         
-        # Hiển thị thống kê Sát Thủ dạng 2 cột gọn gàng
         if game_type == "escape":
-            msg += "\n━━━━━━━━━━━━━━━━━━━\n👹 *THỐNG KÊ SÁT THỦ:*\n"
             k_stats = g_cfg.get("killer_stats", {})
+            total_killer_appearances = sum(k_stats.values())
             
-            # Ghép cặp phòng (1-2, 3-4, 5-6, 7-8)
-            pairs = [(1, 2), (3, 4), (5, 6), (7, 8)]
-            for r1, r2 in pairs:
-                name1 = ROOM_NAMES.get(r1, f"P.{r1}")
-                count1 = k_stats.get(r1, 0)
-                
-                name2 = ROOM_NAMES.get(r2, f"P.{r2}")
-                count2 = k_stats.get(r2, 0)
-                
-                msg += f"`{name1:<12}: {count1}`  |  `{name2:<12}: {count2}`\n"
-                
-        bot.send_message(chat_id, msg, parse_mode="Markdown")
+            msg += "\n━━━━━━━━━━━━━━━━━━━\n"
+            msg += f"👹 *THỐNG KÊ SÁT THỦ:* (Tổng: `{total_killer_appearances}` lần)\n"
+            
+            for room_id in range(1, 9):
+                count = k_stats.get(room_id, 0)
+                room_name = ROOM_NAMES.get(room_id, f"Phòng {room_id}")
+                pct = (count / total_killer_appearances * 100) if total_killer_appearances > 0 else 0.0
+                msg += f"🚪 {room_name}: `{count}` lần ({pct:.1f}%)\n"
+
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        markup.add(
+            types.InlineKeyboardButton("🔄 Cập nhật ngay", callback_data=f"game_{game_type}_status"),
+            types.InlineKeyboardButton("🔙 Trở lại Menu", callback_data=f"back_to_game_{game_type}")
+        )
+        try:
+            bot.edit_message_text(msg, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+        except:
+            pass
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("back_to_game_"))
+def callback_back_game(call):
+    chat_id = call.message.chat.id
+    game_type = call.data.split("_")[3]
+    bot.answer_callback_query(call.id)
+    show_game_menu(chat_id, call.message.message_id, game_type)
 
 @bot.message_handler(func=lambda message: True)
 def handle_text_messages(message):
@@ -278,7 +296,7 @@ def handle_text_messages(message):
                             Thread(target=run_escape_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
                         else:
                             Thread(target=run_sprint_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
-                    bot.reply_to(message, f"✅ **Đã thêm nick thành công!**\nGõ `/start` để quay lại quản lý.")
+                    bot.reply_to(message, f"✅ **Đã thêm nick thành công!**\nGõ `/start` để mở menu điều khiển.")
                     return
             except:
                 pass
@@ -289,8 +307,7 @@ def handle_text_messages(message):
     if game_target_bet:
         try:
             val = float(text)
-            if val <= 0:
-                raise ValueError()
+            if val <= 0: raise ValueError()
             
             g_cfg = cfg[game_target_bet]
             if game_target_bet == "sprint":
@@ -302,17 +319,17 @@ def handle_text_messages(message):
                 g_cfg["base_bet"] = val
                 
             cfg["waiting_for_bet"] = None
-            bot.reply_to(message, f"✅ **Đã cập nhật mức cược cố định:** `{val}` (Mỗi con)\nGõ `/start` để mở lại menu.")
+            bot.reply_to(message, f"✅ **Đã cập nhật mức cược:** `{val}` (Mỗi con)\nGõ `/start` để mở lại menu.")
             return
         except ValueError:
-            bot.reply_to(message, "⚠️ Số tiền không hợp lệ! Vui lòng nhập một số dương (ví dụ: `1` hoặc `5.5`).")
+            bot.reply_to(message, "⚠️ Số tiền không hợp lệ!")
             return
 
     if not text.startswith("/"):
         bot.reply_to(message, "💡 Gõ `/start` để mở bảng chọn game.")
 
 # ==========================================
-# ENGINE 1: VUA THOÁT HIỂM
+# ENGINE 1: VUA THOÁT HIỂM (ĐÃ CỘNG TỶ LỆ THẮNG/THUA)
 # ==========================================
 def run_escape_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)["escape"]
@@ -369,7 +386,15 @@ def run_escape_bot_engine(chat_id, uid, skey):
                                             k_room_int = int(killer_room)
                                             if k_room_int in cfg["killer_stats"]:
                                                 cfg["killer_stats"][k_room_int] += 1
-                                                break
+                                            
+                                            # Đếm thắng/thua cho tài khoản
+                                            if room == k_room_int:
+                                                acc_st["losses"] += 1
+                                                acc_st["total_profit"] -= bet_amt
+                                            else:
+                                                acc_st["wins"] += 1
+                                                acc_st["total_profit"] += (bet_amt * Decimal("0.1")) # Lời ước tính khi thoát hiểm thành công
+                                            break
                                         except:
                                             pass
                             time.sleep(3)
@@ -438,40 +463,4 @@ def run_sprint_bot_engine(chat_id, uid, skey):
             wait_time = int(expire) if isinstance(expire, (int, float)) else 50
             for _ in range(wait_time):
                 if not cfg["global_running"] or acc_st["random_stop"].is_set(): break
-                time.sleep(1)
-
-            winner = None
-            for _ in range(30):
-                res_r = requests.get(f"{base_api}/sprint/issue_result?issue={issue_id}&asset={cfg['asset_type']}", headers=headers, timeout=10)
-                if res_r.status_code == 200:
-                    rank = res_r.json().get("data", {}).get("athlete_rank", [])
-                    if rank:
-                        winner = rank[0]
-                        break
-                time.sleep(1)
-
-            if winner in chosen:
-                profit = (each_bet * 5) - total_bet_amount
-                acc_st["total_profit"] += profit
-                acc_st["wins"] += 1
-            else:
-                acc_st["total_profit"] -= total_bet_amount
-                acc_st["losses"] += 1
-
-        except:
-            pass
-        time.sleep(2)
-
-def run_telebot_polling():
-    while True:
-        try:
-            bot.remove_webhook()
-            time.sleep(1)
-            bot.infinity_polling(timeout=10, long_polling_timeout=5, skip_pending=True)
-        except:
-            time.sleep(5)
-
-if __name__ == "__main__":
-    Thread(target=run_telebot_polling, daemon=True).start()
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+               
