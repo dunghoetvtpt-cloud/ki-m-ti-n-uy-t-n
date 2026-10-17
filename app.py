@@ -562,4 +562,36 @@ def run_sprint_bot_engine(chat_id, uid, skey):
                 requests.post(f"{base_api}/sprint/bet", json={"issue_id": issue_id, "bet_group": "winner", "asset_type": cfg["asset_type"], "athlete_id": aid, "bet_amount": float(each_bet)}, headers=headers, timeout=10)
                 time.sleep(0.2)
             acc_st["total_bets"] += 1
-            for _ in range(int(expire) if isinstance(expire, (
+                        for _ in range(int(expire) if isinstance(expire, (int, float)) else 50):
+                if not cfg["global_running"] or acc_st["random_stop"].is_set(): break
+                time.sleep(1)
+            winner = None
+            for _ in range(30):
+                res_r = requests.get(f"{base_api}/sprint/issue_result?issue={issue_id}&asset={cfg['asset_type']}", headers=headers, timeout=10)
+                if res_r.status_code == 200:
+                    rank = res_r.json().get("data", {}).get("athlete_rank", [])
+                    if rank: winner = rank[0]; break
+                time.sleep(1)
+            if winner in chosen:
+                acc_st["total_profit"] += (each_bet * Decimal("5")) - total_bet_amount
+                acc_st["wins"] += 1; acc_st["streak_loss"] = 0; acc_st["current_build"] = Decimal(str(cfg["bet_amount_total"]))
+            else:
+                acc_st["total_profit"] -= total_bet_amount
+                acc_st["losses"] += 1; acc_st["streak_loss"] += 1; acc_st["current_build"] = acc_st["current_build"] * Decimal(str(cfg["lose_multiplier"]))
+        except: pass
+        time.sleep(2)
+
+def run_telebot_polling():
+    while True:
+        try:
+            bot.remove_webhook()
+            time.sleep(1)
+            bot.infinity_polling(timeout=10, long_polling_timeout=5, skip_pending=True)
+        except:
+            time.sleep(5)
+
+if __name__ == "__main__":
+    Thread(target=run_telebot_polling, daemon=True).start()
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+    
