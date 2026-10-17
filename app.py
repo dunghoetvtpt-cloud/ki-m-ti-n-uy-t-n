@@ -94,8 +94,11 @@ def send_welcome(message):
             f"🌐 Lấy Key tại Web: {web_url}\n"
             "🔑 Vui lòng nhập mã Key của bạn vào ô chat bên dưới:"
         )
-        sent = bot.send_message(chat_id, msg_text, parse_mode="Markdown")
-        cfg["prompt_msg_id"] = sent.message_id
+        try:
+            sent = bot.send_message(chat_id, msg_text, parse_mode="Markdown")
+            cfg["prompt_msg_id"] = sent.message_id
+        except:
+            pass
         return
 
     show_main_menu(chat_id, message.message_id, is_new=True)
@@ -108,23 +111,35 @@ def show_main_menu(chat_id, message_id, is_new=False):
         types.InlineKeyboardButton("🏃 Đua Tốc Độ", callback_data="select_game_sprint")
     )
     if is_new:
-        bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
+        try:
+            bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
+        except:
+            pass
     else:
         try:
             bot.edit_message_text(msg_text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
         except:
-            bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
+            try:
+                bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
+            except:
+                pass
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("select_game_"))
 def callback_select_game(call):
     chat_id = call.message.chat.id
     cfg = get_user_config(chat_id)
     if not cfg["has_valid_key"]:
-        bot.answer_callback_query(call.id, "⚠️ Cần nhập Key bản quyền trước!", show_alert=True)
+        try:
+            bot.answer_callback_query(call.id, "⚠️ Cần nhập Key bản quyền trước!", show_alert=True)
+        except:
+            pass
         return
     game_type = call.data.split("_")[2]
     cfg["active_game"] = game_type
-    bot.answer_callback_query(call.id)
+    try:
+        bot.answer_callback_query(call.id)
+    except:
+        pass
     show_game_menu(chat_id, call.message.message_id, game_type)
 
 def show_game_menu(chat_id, message_id, game_type):
@@ -149,7 +164,10 @@ def show_game_menu(chat_id, message_id, game_type):
     try:
         bot.edit_message_text(msg_text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
     except:
-        bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
+        try:
+            bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
+        except:
+            pass
 
 @bot.callback_query_handler(func=lambda call: call.data == "back_to_main")
 def callback_back_main(call):
@@ -157,7 +175,10 @@ def callback_back_main(call):
     cfg = get_user_config(chat_id)
     cfg["waiting_for_link"] = None
     cfg["waiting_for_bet"] = None
-    bot.answer_callback_query(call.id)
+    try:
+        bot.answer_callback_query(call.id)
+    except:
+        pass
     show_main_menu(chat_id, call.message.message_id)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("game_"))
@@ -165,7 +186,10 @@ def callback_game_actions(call):
     chat_id = call.message.chat.id
     cfg = get_user_config(chat_id)
     if not cfg["has_valid_key"]:
-        bot.answer_callback_query(call.id, "⚠️ Hết hạn Key!", show_alert=True)
+        try:
+            bot.answer_callback_query(call.id, "⚠️ Hết hạn Key!", show_alert=True)
+        except:
+            pass
         return
     parts = call.data.split("_")
     game_type = parts[1]
@@ -180,17 +204,26 @@ def callback_game_actions(call):
         cfg["waiting_for_link"] = game_type
         cfg["waiting_for_bet"] = None
         cfg["prompt_msg_id"] = call.message.message_id
-        bot.answer_callback_query(call.id)
-        bot.edit_message_text(f"📥 **Dán link [ {game_name_vi} ] vào ô chat:**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
+        try:
+            bot.answer_callback_query(call.id)
+            bot.edit_message_text(f"📥 **Dán link [ {game_name_vi} ] vào ô chat:**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
+        except:
+            pass
     elif action == "input_bet":
         cfg["waiting_for_bet"] = game_type
         cfg["waiting_for_link"] = None
         cfg["prompt_msg_id"] = call.message.message_id
-        bot.answer_callback_query(call.id)
-        bot.edit_message_text(f"✏️ **Nhập số tiền cược cho [ {game_name_vi} ]:**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
+        try:
+            bot.answer_callback_query(call.id)
+            bot.edit_message_text(f"✏️ **Nhập số tiền cược cho [ {game_name_vi} ]:**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
+        except:
+            pass
     elif action == "toggle_bot":
         if not g_cfg["accounts"]:
-            bot.answer_callback_query(call.id, "⚠️ Chưa có nick nào!", show_alert=True)
+            try:
+                bot.answer_callback_query(call.id, "⚠️ Chưa có nick nào!", show_alert=True)
+            except:
+                pass
             return
         if not g_cfg["global_running"]:
             g_cfg["global_running"] = True
@@ -201,27 +234,45 @@ def callback_game_actions(call):
                     Thread(target=run_escape_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
                 else:
                     Thread(target=run_sprint_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
-            bot.answer_callback_query(call.id, f"🚀 Đã bật auto!")
+            try:
+                bot.answer_callback_query(call.id, f"🚀 Đã bật auto!")
+            except:
+                pass
         else:
             g_cfg["global_running"] = False
             for uid in g_cfg["accounts"]:
                 get_account_state(game_type, uid)["random_stop"].set()
-            bot.answer_callback_query(call.id, "⏹️ Đã dừng bot!")
+            try:
+                bot.answer_callback_query(call.id, "⏹️ Đã dừng bot!")
+            except:
+                pass
         show_game_menu(chat_id, call.message.message_id, game_type)
     elif action == "toggle_asset":
         g_cfg["asset_type"] = "USDT" if g_cfg["asset_type"] == "BUILD" else "BUILD"
-        bot.answer_callback_query(call.id, f"Đổi sang {g_cfg['asset_type']}")
+        try:
+            bot.answer_callback_query(call.id, f"Đổi sang {g_cfg['asset_type']}")
+        except:
+            pass
         show_game_menu(chat_id, call.message.message_id, game_type)
     elif action == "list":
         if not g_cfg["accounts"]:
-            bot.answer_callback_query(call.id, "Chưa có nick nào!", show_alert=True)
+            try:
+                bot.answer_callback_query(call.id, "Chưa có nick nào!", show_alert=True)
+            except:
+                pass
             return
         msg = f"👥 *DS NICK ({game_name_vi.upper()}):*\n"
         for idx, uid in enumerate(g_cfg["accounts"].keys(), 1):
             msg += f"{idx}. `{uid}`\n"
-        bot.edit_message_text(msg, chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
+        try:
+            bot.edit_message_text(msg, chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
+        except:
+            pass
     elif action == "status":
-        bot.answer_callback_query(call.id, "🔄 Cập nhật!")
+        try:
+            bot.answer_callback_query(call.id, "🔄 Cập nhật!")
+        except:
+            pass
         tot_bets, tot_wins, tot_losses, tot_profit = 0, 0, 0, Decimal("0")
         for uid in g_cfg["accounts"]:
             st = get_account_state(game_type, uid)
@@ -253,7 +304,10 @@ def callback_game_actions(call):
 def callback_back_game(call):
     chat_id = call.message.chat.id
     game_type = call.data.split("_")[3]
-    bot.answer_callback_query(call.id)
+    try:
+        bot.answer_callback_query(call.id)
+    except:
+        pass
     show_game_menu(chat_id, call.message.message_id, game_type)
 
 @bot.message_handler(func=lambda message: True)
@@ -292,8 +346,10 @@ def handle_text_messages(message):
 
     game_target_link = cfg.get("waiting_for_link")
     if game_target_link:
-        try: bot.delete_message(chat_id, message.message_id)
-        except: pass
+        try:
+            bot.delete_message(chat_id, message.message_id)
+        except:
+            pass
         prompt_id = cfg.get("prompt_msg_id")
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🔙 Trở lại", callback_data=f"back_to_game_{game_target_link}"))
@@ -315,25 +371,33 @@ def handle_text_messages(message):
                         else:
                             Thread(target=run_sprint_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
                     if prompt_id:
-                        try: bot.edit_message_text(f"✅ **Thêm nick thành công!** (`{uid}`)", chat_id, prompt_id, reply_markup=markup, parse_mode="Markdown")
-                        except: pass
+                        try:
+                            bot.edit_message_text(f"✅ **Thêm nick thành công!** (`{uid}`)", chat_id, prompt_id, reply_markup=markup, parse_mode="Markdown")
+                        except:
+                            pass
                     return
-            except: pass
+            except:
+                pass
         if prompt_id:
-            try: bot.edit_message_text("⚠️ **Link lỗi!** Thử lại:", chat_id, prompt_id, reply_markup=markup, parse_mode="Markdown")
-            except: pass
+            try:
+                bot.edit_message_text("⚠️ **Link lỗi!** Thử lại:", chat_id, prompt_id, reply_markup=markup, parse_mode="Markdown")
+            except:
+                pass
         return
 
     game_target_bet = cfg.get("waiting_for_bet")
     if game_target_bet:
-        try: bot.delete_message(chat_id, message.message_id)
-        except: pass
+        try:
+            bot.delete_message(chat_id, message.message_id)
+        except:
+            pass
         prompt_id = cfg.get("prompt_msg_id")
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🔙 Trở lại", callback_data=f"back_to_game_{game_target_bet}"))
         try:
             val = float(text)
-            if val <= 0: raise ValueError()
+            if val <= 0:
+                raise ValueError()
             g_cfg = cfg[game_target_bet]
             if game_target_bet == "sprint":
                 g_cfg["bet_amount_total"] = str(val)
@@ -343,18 +407,24 @@ def handle_text_messages(message):
                 g_cfg["base_bet"] = val
             cfg["waiting_for_bet"] = None
             if prompt_id:
-                try: bot.edit_message_text(f"✅ **Đã cập nhật cược:** `{val}`", chat_id, prompt_id, reply_markup=markup, parse_mode="Markdown")
-                except: pass
+                try:
+                    bot.edit_message_text(f"✅ **Đã cập nhật cược:** `{val}`", chat_id, prompt_id, reply_markup=markup, parse_mode="Markdown")
+                except:
+                    pass
             return
         except:
             if prompt_id:
-                try: bot.edit_message_text("⚠️ **Số tiền lỗi!** Nhập lại số:", chat_id, prompt_id, reply_markup=markup, parse_mode="Markdown")
-                except: pass
+                try:
+                    bot.edit_message_text("⚠️ **Số tiền lỗi!** Nhập lại số:", chat_id, prompt_id, reply_markup=markup, parse_mode="Markdown")
+                except:
+                    pass
             return
 
     if not text.startswith("/"):
-        try: bot.delete_message(chat_id, message.message_id)
-        except: pass
+        try:
+            bot.delete_message(chat_id, message.message_id)
+        except:
+            pass
 
 def run_escape_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)["escape"]
@@ -365,17 +435,21 @@ def run_escape_bot_engine(chat_id, uid, skey):
         try:
             resp = session.post("https://api.escapemaster.net/escape_game/enter_room", json={"asset_type": cfg["asset_type"], "user_id": uid, "room_id": r_id}, headers=headers, timeout=5)
             return resp.status_code == 200 and resp.json().get("code") == 0
-        except: return False
+        except:
+            return False
     def place_bet(r_id, amt):
         try:
             resp = session.post("https://api.escapemaster.net/escape_game/bet", json={"asset_type": cfg["asset_type"], "user_id": uid, "room_id": r_id, "bet_amount": amt}, headers=headers, timeout=5)
             return resp.status_code == 200 and resp.json().get("code") == 0
-        except: return False
+        except:
+            return False
     def get_my_joined():
         try:
             resp = session.get("https://api.escapemaster.net/escape_game/my_joined", params={"asset": cfg["asset_type"], "page": 1, "page_size": 10}, headers=headers, timeout=5)
-            if resp.status_code == 200: return resp.json().get("data", {}).get("items", [])
-        except: pass
+            if resp.status_code == 200:
+                return resp.json().get("data", {}).get("items", [])
+        except:
+            pass
         return []
     while cfg["global_running"] and not acc_st["random_stop"].is_set():
         try:
@@ -403,26 +477,5 @@ def run_escape_bot_engine(chat_id, uid, skey):
                                     if killer_room is not None:
                                         try:
                                             k_int = int(killer_room)
-                                            if k_int in cfg["killer_stats"]: cfg["killer_stats"][k_int] += 1
-                                            if is_killed:
-                                                acc_st["losses"] += 1
-                                                acc_st["total_profit"] -= Decimal(str(bet_val))
-                                            else:
-                                                acc_st["wins"] += 1
-                                                acc_st["total_profit"] += Decimal(str(award - bet_val))
-                                            break
-                                        except: pass
-                                time.sleep(2)
-        except: pass
-        time.sleep(3)
-
-def run_sprint_bot_engine(chat_id, uid, skey):
-    cfg = get_user_config(chat_id)["sprint"]
-    acc_st = get_account_state("sprint", uid)
-    base_api = "https://api.sprintrun.win"
-    headers = {"accept": "*/*", "content-type": "application/json", "origin": "https://sprintrun.win", "referer": "https://sprintrun.win/", "user-agent": "Mozilla/5.0", "user-id": str(uid), "user-login": "login_v2", "user-secret-key": skey}
-    while cfg["global_running"] and not acc_st["random_stop"].is_set():
-        try:
-            if acc_st["streak_loss"] >= cfg["lose_limit"]:
-                acc_st["streak_loss"] = 0
-               
+                                            if k_int in cfg["killer_stats"]:
+                                  
