@@ -329,3 +329,191 @@ def handle_text_messages(message):
 
     if not text.startswith("/"):
         bot.reply_to(message, "💡 Gõ `/start` để mở bảng chọn game.")
+# ==========================================
+# ENGINE 1: VUA THOÁT HIỂM (BẮT SÁT THỦ CHUẨN ĐẮC ĐỊA)
+# ==========================================
+def run_escape_bot_engine(chat_id, uid, skey):
+    cfg = get_user_config(chat_id)["escape"]
+    acc_st = get_account_state("escape", uid)
+    
+    headers = {
+        "user-id": str(uid),
+        "user-secret-key": skey,
+        "content-type": "application/json",
+        "user-agent": "Mozilla/5.0"
+    }
+
+    while cfg["global_running"] and not acc_st["random_stop"].is_set():
+        try:
+            url_my = "https://api.escapemaster.net/escape_game/my_joined"
+            resp = requests.get(url_my, params={"asset": cfg["asset_type"], "page": 1, "page_size": 10},
+                                headers=headers, timeout=10)
+            data = resp.json()
+            if data.get("code") == 0:
+                items = data.get("data", {}).get("items", [])
+                if items:
+                    latest_issue = str(items[0].get("issue_id"))
+                    if acc_st.get("current_issue") != latest_issue:
+                        acc_st["current_issue"] = latest_issue
+                        acc_st["total_bets"] += 1
+                        room = random.randint(1, 8)
+                        bet_amt = Decimal(str(cfg["base_bet"]))
+                        
+                        # Vào phòng & đặt cược
+                        requests.post("https://api.escapemaster.net/escape_game/enter_room",
+                                      json={"asset_type": cfg["asset_type"], "user_id": uid, "room_id": room},
+                                      headers=headers, timeout=10)
+                        time.sleep(0.1)
+                        requests.post("https://api.escapemaster.net/escape_game/bet",
+                                      json={"asset_type": cfg["asset_type"], "user_id": uid, "room_id": room, "bet_amount": float(bet_amt)},
+                                      headers=headers, timeout=10)
+                        
+                        # Chờ kết quả ván đấu
+                        time.sleep(22)
+                        
+                        # Quét kết quả trả về từ API
+                        for _ in range(12):
+                            res_resp = requests.get(url_my, params={"asset": cfg["asset_type"], "page": 1, "page_size": 10},
+                                                    headers=headers, timeout=10)
+                            if res_resp.status_code == 200:
+                                res_items = res_resp.json().get("data", {}).get("items", [])
+                                matched = [it for it in res_items if str(it.get("issue_id")) == latest_issue]
+                                if matched:
+                                    item_res = matched[0]
+                                    
+                                    # Tìm kiếm ID phòng sát thủ qua tất cả biến cấu trúc có thể có
+                                    killer_room = None
+                                    for key_name in ["killer_room_id", "killer_room", "killer", "room_killed", "last_killer_room"]:
+                                        if key_name in item_res and item_res[key_name] is not None:
+                                            killer_room = item_res[key_name]
+                                            break
+                                            
+                                    if killer_room is not None:
+                                        try:
+                                            k_room_int = int(killer_room)
+                                            if k_room_int in cfg["killer_stats"]:
+                                                cfg["killer_stats"][k_room_int] += 1
+                                            
+                                            if room == k_room_int:
+                                                acc_st["losses"] += 1
+                                                acc_st["total_profit"] -= bet_amt
+                                            else:
+                                                acc_st["wins"] += 1
+                                                acc_st["total_profit"] += (bet_amt * Decimal("0.1"))
+                                            break
+                                        except Exception:
+                                            pass
+                            time.sleep(2)
+        except Exception:
+            pass
+        time.sleep(3)
+
+# ==========================================
+# ENGINE 2: ĐUA TỐC ĐỘ
+# ==========================================
+def run_sprint_bot_engine(chat_id, uid, skey):
+    cfg = get_user_config(chat_id)["sprint"]
+    acc_st = get_account_state("sprint", uid)
+    base_api = "https://api.sprintrun.win"
+    
+    headers = {
+        "accept": "*/*",
+        "content-type": "application/json",
+        "origin": "https://sprintrun.win",
+        "referer": "https://sprintrun.win/",
+        "user-agent": "Mozilla/5.0",
+        "user-id": str(uid),
+        "user-login": "login_v2",
+        "user-secret-key": skey
+    }
+
+    while cfg["global_running"] and not acc_st["random_stop"].is_set():
+        try:
+            if acc_st["streak_loss"] >= cfg["lose_limit"]:
+                acc_st["streak_loss"] = 0
+                acc_st["current_build"] = Decimal(str(cfg["bet_amount_total"]))
+                rest_time = cfg["rest_rounds"] * 60
+                time.sleep(rest_time)
+                continue
+
+            r = requests.get(f"{base_api}/sprint/home?asset={cfg['asset_type']}", headers=headers, timeout=10)
+            if r.status_code != 200:
+                time.sleep(3)
+                continue
+            
+            res_data = r.json().get("data", {})
+            issue_id = res_data.get("issue_id")
+            expire = res_data.get("expire_seconds", 50)
+            athletes = res_data.get("athlete_list", [])
+
+            if len(athletes) < 3:
+                time.sleep(3)
+                continue
+
+            random.shuffle(athletes)
+            chosen_athletes = random.sample(athletes, 3)
+            chosen = [a["id"] for a in chosen_athletes]
+
+            each_bet = acc_st["current_build"].quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
+            total_bet_amount = each_bet * Decimal(len(chosen))
+
+            for aid in chosen:
+                p_data = {
+                    "issue_id": issue_id,
+                    "bet_group": "winner",
+                    "asset_type": cfg["asset_type"],
+                    "athlete_id": aid,
+                    "bet_amount": float(each_bet)
+                }
+                requests.post(f"{base_api}/sprint/bet", json=p_data, headers=headers, timeout=10)
+                time.sleep(0.2)
+
+            acc_st["total_bets"] += 1
+
+            wait_time = int(expire) if isinstance(expire, (int, float)) else 50
+            for _ in range(wait_time):
+                if not cfg["global_running"] or acc_st["random_stop"].is_set():
+                    break
+                time.sleep(1)
+
+            winner = None
+            for _ in range(30):
+                res_r = requests.get(f"{base_api}/sprint/issue_result?issue={issue_id}&asset={cfg['asset_type']}", headers=headers, timeout=10)
+                if res_r.status_code == 200:
+                    rank = res_r.json().get("data", {}).get("athlete_rank", [])
+                    if rank:
+                        winner = rank[0]
+                        break
+                time.sleep(1)
+
+            if winner in chosen:
+                profit = (each_bet * Decimal("5")) - total_bet_amount
+                acc_st["total_profit"] += profit
+                acc_st["wins"] += 1
+                acc_st["streak_loss"] = 0
+                acc_st["current_build"] = Decimal(str(cfg["bet_amount_total"]))
+            else:
+                acc_st["total_profit"] -= total_bet_amount
+                acc_st["losses"] += 1
+                acc_st["streak_loss"] += 1
+                multiplier = Decimal(str(cfg["lose_multiplier"]))
+                acc_st["current_build"] = acc_st["current_build"] * multiplier
+
+        except Exception:
+            pass
+        time.sleep(2)
+
+def run_telebot_polling():
+    while True:
+        try:
+            bot.remove_webhook()
+            time.sleep(1)
+            bot.infinity_polling(timeout=10, long_polling_timeout=5, skip_pending=True)
+        except Exception:
+            time.sleep(5)
+
+if __name__ == "__main__":
+    Thread(target=run_telebot_polling, daemon=True).start()
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+        
