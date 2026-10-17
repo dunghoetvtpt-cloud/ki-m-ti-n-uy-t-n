@@ -10,7 +10,8 @@ from threading import Thread, Lock, Event
 from decimal import Decimal, ROUND_DOWN
 from flask import Flask
 
-TELEGRAM_BOT_TOKEN = "8513825480:AAGzOtGqQpkKJv1563LWU5_PcpexOJVi3HE"
+# 🔐 Bảo mật Token bằng biến môi trường trên Render
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "DÁN_TOKEN_VÀO_ĐÂY_NẾU_CHƯA_CÀI_ENV")
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, parse_mode="Markdown")
 
 app = Flask(__name__)
@@ -224,7 +225,6 @@ def callback_game_actions(call):
             f"Tổng lời: `{tot_profit:+.4f} {g_cfg['asset_type']}`"
         )
         
-        # Thêm phần thống kê Sát Thủ ghé thăm vào phòng cho Vua Thoát Hiểm
         if game_type == "escape":
             msg += "\n━━━━━━━━━━━━━━━━━━━\n👹 *THỐNG KÊ SÁT THỦ VÀO PHÒNG:*\n"
             k_stats = g_cfg.get("killer_stats", {})
@@ -292,7 +292,7 @@ def handle_text_messages(message):
         bot.reply_to(message, "💡 Gõ `/start` để mở bảng chọn game.")
 
 # ==========================================
-# ENGINE 1: VUA THOÁT HIỂM (ĐÃ BỔ SUNG LẤY KẾT QUẢ SÁT THỦ VÀO PHÒNG)
+# ENGINE 1: VUA THOÁT HIỂM
 # ==========================================
 def run_escape_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)["escape"]
@@ -329,7 +329,6 @@ def run_escape_bot_engine(chat_id, uid, skey):
                                       json={"asset_type": cfg["asset_type"], "user_id": uid, "room_id": room, "bet_amount": float(bet_amt)},
                                       headers=headers, timeout=10)
                         
-                        # Chờ ván chơi kết thúc để quét lịch sử cập nhật số lần Sát Thủ vào phòng
                         time.sleep(12)
                         for _ in range(8):
                             res_resp = requests.get(url, params={"asset": cfg["asset_type"], "page": 1, "page_size": 5},
@@ -349,7 +348,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
         time.sleep(3)
 
 # ==========================================
-# ENGINE 2: ĐUA TỐC ĐỘ (GIỮ NGUYÊN GỐC ĐANG CHẠY NGON)
+# ENGINE 2: ĐUA TỐC ĐỘ
 # ==========================================
 def run_sprint_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)["sprint"]
@@ -386,7 +385,6 @@ def run_sprint_bot_engine(chat_id, uid, skey):
                 time.sleep(3)
                 continue
 
-            # Xáo trộn mạnh 6 vận động viên và chọn ngẫu nhiên 3 con
             random.shuffle(athletes)
             chosen_athletes = random.sample(athletes, 3)
             chosen = [a["id"] for a in chosen_athletes]
@@ -394,7 +392,6 @@ def run_sprint_bot_engine(chat_id, uid, skey):
             each_bet = acc_st["current_build"].quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
             total_bet_amount = each_bet * Decimal(len(chosen))
 
-            # Bắn lệnh cược ngay lập tức khi phát hiện ván mới
             for aid in chosen:
                 payload = {
                     "issue_id": issue_id,
@@ -408,13 +405,11 @@ def run_sprint_bot_engine(chat_id, uid, skey):
 
             acc_st["total_bets"] += 1
 
-            # Chờ hết thời gian đếm ngược của ván đấu
             wait_time = int(expire) if isinstance(expire, (int, float)) else 50
             for _ in range(wait_time):
                 if not cfg["global_running"] or acc_st["random_stop"].is_set(): break
                 time.sleep(1)
 
-            # Lấy kết quả ván đấu
             winner = None
             for _ in range(30):
                 res_r = requests.get(f"{base_api}/sprint/issue_result?issue={issue_id}&asset={cfg['asset_type']}", headers=headers, timeout=10)
