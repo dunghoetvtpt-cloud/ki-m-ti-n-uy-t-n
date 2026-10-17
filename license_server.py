@@ -10,8 +10,6 @@ license_app.secret_key = "dung_license_secret_key_1612012"
 
 KEYS_DB_FILE = "keys_db.json"
 ADMIN_PASSWORD = "dung1612012"
-
-# Cấu hình API Link4m của ông
 LINK4M_API_TOKEN = "68a76c1354de3f0da567ca17"
 
 def load_keys():
@@ -27,10 +25,8 @@ def save_keys(keys_data):
     with open(KEYS_DB_FILE, "w") as f:
         json.dump(keys_data, f, indent=4)
 
-# 1. TRANG CHỦ (Giao diện lấy Key giống mẫu)
 @license_app.route('/')
 def home():
-    keys_db = load_keys()
     new_key = request.args.get("key", "")
     error = request.args.get("error", "")
 
@@ -72,8 +68,6 @@ def home():
                 <div class="error">{{ error }}</div>
             {% endif %}
             
-            <p style="font-size: 11px; margin-top: 15px; color: #64748b;">Key chưa dùng quá 30 phút sẽ tự động bị xóa</p>
-            
             <a href="/admin" class="btn-admin">⚙️ Đăng nhập Quản trị viên</a>
         </div>
     </body>
@@ -81,34 +75,26 @@ def home():
     """
     return render_template_string(html, new_key=new_key, error=error)
 
-# 2. TẠO LINK RÚT GỌN QUA LINK4M API
 @license_app.route('/get_link4m')
 def get_link4m():
-    # URL đích khi vượt link xong sẽ trỏ về trang cấp key của web mình
     current_domain = request.host_url.rstrip('/')
     destination_url = f"{current_domain}/claim_key"
-    
     api_url = f"https://link4m.co/api-shorten/v2?api={LINK4M_API_TOKEN}&url={destination_url}"
     
     try:
         res = requests.get(api_url, timeout=5)
         result = res.json()
         if result.get("status") == "success":
-            shortened_url = result.get("shortenedUrl")
-            return redirect(shortened_url)
+            return redirect(result.get("shortenedUrl"))
         else:
-            err_msg = result.get("message", "Lỗi tạo link rút gọn")
-            return redirect(url_for('home', error=err_msg))
-    except Exception as e:
-        return redirect(url_for('home', error="Không thể kết nối tới Link4m API"))
+            return redirect(url_for('home', error=result.get("message", "Lỗi tạo link")))
+    except:
+        return redirect(url_for('home', error="Không thể kết nối Link4m API"))
 
-# 3. NHẬN KEY SAU KHI VƯỢT LINK XONG
 @license_app.route('/claim_key')
 def claim_key():
     keys_db = load_keys()
-    # Tạo mã Key mới duy nhất
     new_key = "KEY-XW-" + ''.join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=8))
-    
     keys_db[new_key] = {
         "status": "chua_dung",
         "used_by": None,
@@ -118,35 +104,27 @@ def claim_key():
     save_keys(keys_db)
     return redirect(url_for('home', key=new_key))
 
-# 4. API CHO BOT TELEGRAM KIỂM TRA KEY & KÍCH HOẠT 1 LẦN
 @license_app.route('/api/verify_key')
 def api_verify_key():
     key_code = request.args.get('key', '').strip()
     user_id = request.args.get('user_id', '').strip()
-    
     keys_db = load_keys()
     
     if key_code not in keys_db:
         return {"status": "error", "msg": "Key không tồn tại!"}
     
     k_data = keys_db[key_code]
-    
-    # Kiểm tra nếu key đã được dùng rồi
     if k_data["status"] == "da_dung":
-        # Kiểm tra xem có đang trong 24h của chính user đó không
         if k_data["used_by"] == user_id and time.time() < k_data["expire_at"]:
             return {"status": "success", "msg": "Key vẫn còn hiệu lực 24h!"}
-        return {"status": "error", "msg": "Key này đã được sử dụng bởi người khác hoặc đã hết hạn!"}
+        return {"status": "error", "msg": "Key đã được sử dụng hoặc hết hạn!"}
     
-    # Nếu key chưa dùng -> Kích hoạt lần đầu (Đếm ngược 24h từ đây)
     k_data["status"] = "da_dung"
     k_data["used_by"] = user_id
-    k_data["expire_at"] = time.time() + (24 * 3600) # Hiệu lực đúng 24 giờ
+    k_data["expire_at"] = time.time() + (24 * 3600)
     save_keys(keys_db)
-    
     return {"status": "success", "msg": "Kích hoạt thành công 24 giờ!"}
 
-# 5. TRANG QUẢN TRỊ ADMIN (Mật khẩu: dung1612012)
 @license_app.route('/admin', methods=['GET', 'POST'])
 def admin_login():
     error = ""
@@ -193,7 +171,6 @@ def admin_login():
 def admin_dashboard():
     if not session.get('admin_logged'):
         return redirect(url_for('admin_login'))
-        
     keys_db = load_keys()
     
     html = """
@@ -225,8 +202,8 @@ def admin_dashboard():
             <table>
                 <tr>
                     <th>Mã Key</th>
-                    <th>Trạng thái & Người dùng</th>
-                    <th>Thời hạn / Đếm ngược</th>
+                    <th>Trạng Thái & User</th>
+                    <th>Đếm Ngược 24h</th>
                     <th>Xóa</th>
                 </tr>
                 {% for k, info in keys.items() %}
@@ -243,7 +220,7 @@ def admin_dashboard():
                         {% if info.expire_at and now < info.expire_at %}
                             {{ ((info.expire_at - now) | int // 3600) }} giờ nữa hết hạn
                         {% else %}
-                            Hết hạn / Chưa kích hoạt
+                            Chưa kích hoạt / Hết hạn
                         {% endif %}
                     </td>
                     <td><a href="/admin/delete?key={{ k }}" class="btn-del" onclick="return confirm('Xóa key này?')">Xóa</a></td>
@@ -271,4 +248,3 @@ def admin_delete():
 def admin_logout():
     session.pop('admin_logged', None)
     return redirect(url_for('admin_login'))
-  
