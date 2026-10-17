@@ -5,8 +5,8 @@ import random
 import requests
 from flask import Flask, render_template_string, request, redirect, url_for, session
 
-license_app = Flask(__name__)
-license_app.secret_key = "dung_license_secret_key_1612012"
+app = Flask(__name__)
+app.secret_key = "dung_license_secret_key_1612012"
 
 KEYS_DB_FILE = "keys_db.json"
 ADMIN_PASSWORD = "dung1612012"
@@ -25,7 +25,7 @@ def save_keys(keys_data):
     with open(KEYS_DB_FILE, "w") as f:
         json.dump(keys_data, f, indent=4)
 
-@license_app.route('/')
+@app.route('/')
 def home():
     new_key = request.args.get("key", "")
     error = request.args.get("error", "")
@@ -75,7 +75,7 @@ def home():
     """
     return render_template_string(html, new_key=new_key, error=error)
 
-@license_app.route('/get_link4m')
+@app.route('/get_link4m')
 def get_link4m():
     current_domain = request.host_url.rstrip('/')
     destination_url = f"{current_domain}/claim_key"
@@ -91,7 +91,7 @@ def get_link4m():
     except:
         return redirect(url_for('home', error="Không thể kết nối Link4m API"))
 
-@license_app.route('/claim_key')
+@app.route('/claim_key')
 def claim_key():
     keys_db = load_keys()
     new_key = "KEY-XW-" + ''.join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=8))
@@ -104,8 +104,8 @@ def claim_key():
     save_keys(keys_db)
     return redirect(url_for('home', key=new_key))
 
-# API cho Bot Telegram gọi sang để xác thực Key đơn lẻ
-@license_app.route('/api/verify_key')
+# API cho bot.py gọi sang để xác thực Key
+@app.route('/api/verify_key')
 def api_verify_key():
     key_code = request.args.get('key', '').strip()
     user_id = request.args.get('user_id', '').strip()
@@ -126,7 +126,7 @@ def api_verify_key():
     save_keys(keys_db)
     return {"status": "success", "msg": "Kích hoạt thành công 24 giờ!"}
 
-@license_app.route('/admin', methods=['GET', 'POST'])
+@app.route('/admin', methods=['GET', 'POST'])
 def admin_login():
     error = ""
     if request.method == 'POST':
@@ -158,7 +158,7 @@ def admin_login():
             <h2>🔒 Đăng Nhập Quản Trị</h2>
             {% if error %}<div class="error">{{ error }}</div>{% endif %}
             <form method="POST">
-                <input type="password" name="password" placeholder="Nhập mật khẩu admin..." required>
+                <input type="password" name="password" placeholder="Mật khẩu admin..." required>
                 <button type="submit" class="btn">Đăng Nhập</button>
             </form>
             <a href="/" class="back">← Quay lại trang chủ</a>
@@ -168,7 +168,7 @@ def admin_login():
     """
     return render_template_string(html, error=error)
 
-@license_app.route('/admin/dashboard')
+@app.route('/admin/dashboard')
 def admin_dashboard():
     if not session.get('admin_logged'):
         return redirect(url_for('admin_login'))
@@ -234,7 +234,7 @@ def admin_dashboard():
     """
     return render_template_string(html, keys=keys_db, now=time.time())
 
-@license_app.route('/admin/delete')
+@app.route('/admin/delete')
 def admin_delete():
     if not session.get('admin_logged'):
         return redirect(url_for('admin_login'))
@@ -245,10 +245,11 @@ def admin_delete():
         save_keys(keys_db)
     return redirect(url_for('admin_dashboard'))
 
-@license_app.route('/admin/logout')
+@app.route('/admin/logout')
 def admin_logout():
     session.pop('admin_logged', None)
     return redirect(url_for('admin_login'))
 
 if __name__ == '__main__':
-    license_app.run(host='0.0.0.0', port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
