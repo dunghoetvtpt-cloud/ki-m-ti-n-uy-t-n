@@ -241,13 +241,64 @@ def send_welcome(message):
     if not cfg["has_valid_key"]:
         cfg["waiting_for_key"] = True
         web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
-        msg_text = f"🔐 *YÊU CẦU KEY BẢN QUYỀN*\n━━━━━━━━━━━━━━━━━━━\n🌐 Lấy Key tại Web: {web_url}\n🔑 Vui lòng nhập mã Key của bạn vào ô chat bên dưới:"
+        
+        # Giao diện nút bấm gọn gàng, đẹp mắt
+        msg_text = (
+            "📜 **AWORLD LICENSE GATEWAY**\n"
+            "───────────────────\n"
+            "⚠️ **Bạn cần có Key bản quyền để sử dụng bot.**\n\n"
+            "👉 Vui lòng chọn thao tác bên dưới:"
+        )
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(
+            types.InlineKeyboardButton("🌐 Tới Trang Lấy Key", url=web_url),
+            types.InlineKeyboardButton("🔑 Nhập Key Kích Hoạt", callback_data="btn_nhap_key")
+        )
         try:
-            sent = bot.send_message(chat_id, msg_text, parse_mode="Markdown")
+            sent = bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
             cfg["prompt_msg_id"] = sent.message_id
-        except: pass
+        except: 
+            pass
         return
     show_main_menu(chat_id, message.message_id, is_new=True)
+
+@bot.callback_query_handler(func=lambda call: call.data == "btn_nhap_key")
+def callback_nhap_key_btn(call):
+    chat_id = call.message.chat.id
+    cfg = get_user_config(chat_id)
+    cfg["waiting_for_key"] = True
+    cfg["prompt_msg_id"] = call.message.message_id
+    
+    text = "🔑 **Vui lòng nhập mã Key của bạn vào đây**\n*(Ví dụ: `KEY-XW-XXXXXXXX`):*"
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("⬅️ Quay lại", callback_data="btn_back_start"))
+    try:
+        bot.edit_message_text(text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+    except:
+        pass
+
+@bot.callback_query_handler(func=lambda call: call.data == "btn_back_start")
+def callback_back_start(call):
+    chat_id = call.message.chat.id
+    cfg = get_user_config(chat_id)
+    cfg["waiting_for_key"] = False
+    
+    web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
+    msg_text = (
+        "📜 **AWORLD LICENSE GATEWAY**\n"
+        "───────────────────\n"
+        "⚠️ **Bạn cần có Key bản quyền để sử dụng bot.**\n\n"
+        "👉 Vui lòng chọn thao tác bên dưới:"
+    )
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("🌐 Tới Trang Lấy Key", url=web_url),
+        types.InlineKeyboardButton("🔑 Nhập Key Kích Hoạt", callback_data="btn_nhap_key")
+    )
+    try:
+        bot.edit_message_text(msg_text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+    except:
+        pass
 
 def show_main_menu(chat_id, message_id, is_new=False):
     msg_text = "🎮 *XWORLD BOT* | Chọn game:"
@@ -397,25 +448,46 @@ def callback_back_game(call):
     try: bot.answer_callback_query(call.id)
     except: pass
     show_game_menu(chat_id, call.message.message_id, game_type)
-@bot.message_handler(func=lambda message: True)
+    @bot.message_handler(func=lambda message: True)
 def handle_text_messages(message):
     chat_id = message.chat.id; text = message.text.strip(); cfg = get_user_config(chat_id)
     if cfg.get("waiting_for_key"):
-        try: bot.delete_message(chat_id, message.message_id)
-        except: pass
-        prompt_id = cfg.get("prompt_msg_id"); res = verify_key_with_server(text, str(chat_id))
+        # Tự động xóa tin nhắn chứa key người dùng gửi lên và tin nhắn hướng dẫn cho gọn
+        try:
+            bot.delete_message(chat_id, message.message_id)
+        except:
+            pass
+
+        prompt_id = cfg.get("prompt_msg_id")
+        if prompt_id:
+            try:
+                bot.delete_message(chat_id, prompt_id)
+            except:
+                pass
+
+        res = verify_key_with_server(text, str(chat_id))
         if res.get("status") == "success":
-            cfg["has_valid_key"] = True; cfg["waiting_for_key"] = False
-            if prompt_id:
-                try: show_main_menu(chat_id, prompt_id, is_new=False)
-                except: pass
+            cfg["has_valid_key"] = True
+            cfg["waiting_for_key"] = False
+            bot.send_message(
+                chat_id,
+                "✅ **Kích hoạt Key thành công!** Cảm ơn ông đã sử dụng dịch vụ.",
+                parse_mode="Markdown"
+            )
+            show_main_menu(chat_id, message.message_id, is_new=True)
         else:
-            if prompt_id:
-                markup = types.InlineKeyboardMarkup()
-                web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
-                markup.add(types.InlineKeyboardButton("🌐 Lấy Key Mới", url=web_url))
-                try: bot.edit_message_text("⚠️ **Key không hợp lệ hoặc đã hết hạn!** Thử lại:", chat_id, prompt_id, reply_markup=markup, parse_mode="Markdown")
-                except: pass
+            web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
+            markup = types.InlineKeyboardMarkup()
+            markup.add(
+                types.InlineKeyboardButton("🌐 Lấy Key Mới", url=web_url),
+                types.InlineKeyboardButton("🔑 Nhập Lại Key", callback_data="btn_nhap_key")
+            )
+            bot.send_message(
+                chat_id,
+                f"❌ **Không thể xác thực!**\nKey `{text}` không hợp lệ hoặc đã hết hạn.",
+                reply_markup=markup,
+                parse_mode="Markdown"
+            )
         return
 
     game_target_link = cfg.get("waiting_for_link")
@@ -580,4 +652,4 @@ if __name__ == "__main__":
     Thread(target=run_telebot_polling, daemon=True).start()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-        
+            
