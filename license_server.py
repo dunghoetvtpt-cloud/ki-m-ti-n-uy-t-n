@@ -104,6 +104,7 @@ def claim_key():
     save_keys(keys_db)
     return redirect(url_for('home', key=new_key))
 
+# API cho Bot Telegram gọi sang để xác thực Key đơn lẻ
 @license_app.route('/api/verify_key')
 def api_verify_key():
     key_code = request.args.get('key', '').strip()
@@ -248,3 +249,6 @@ def admin_delete():
 def admin_logout():
     session.pop('admin_logged', None)
     return redirect(url_for('admin_login'))
+
+if __name__ == '__main__':
+    license_app.run(host='0.0.0.0', port=5000)
