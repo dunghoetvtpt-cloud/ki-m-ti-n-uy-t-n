@@ -10,7 +10,6 @@ from threading import Thread, Lock, Event
 from decimal import Decimal, ROUND_DOWN
 from flask import Flask
 
-# 🔐 Khai báo Token
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, parse_mode="Markdown")
 
@@ -23,7 +22,6 @@ def home():
 user_data = {}
 data_lock = Lock()
 
-# Danh sách tên phòng đầy đủ tiếng Việt trong Vua Thoát Hiểm
 ROOM_NAMES = {
     1: "Nhà Kho",
     2: "Phòng trò chuyện",
@@ -77,7 +75,6 @@ def get_account_state(game_prefix, uid):
         }
     return account_threads[key]
 
-# --- MENU CHÍNH CHỌN GAME ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     chat_id = message.chat.id
@@ -330,137 +327,3 @@ def handle_text_messages(message):
 
     if not text.startswith("/"):
         bot.reply_to(message, "💡 Gõ `/start` để mở bảng chọn game.")
-
-# ==========================================
-# ENGINE 1: VUA THOÁT HIỂM
-# ==========================================
-def run_escape_bot_engine(chat_id, uid, skey):
-    cfg = get_user_config(chat_id)["escape"]
-    acc_st = get_account_state("escape", uid)
-    
-    headers = {
-        "user-id": str(uid),
-        "user-secret-key": skey,
-        "content-type": "application/json",
-        "user-agent": "Mozilla/5.0"
-    }
-
-    while cfg["global_running"] and not acc_st["random_stop"].is_set():
-        try:
-            url = "https://api.escapemaster.net/escape_game/my_joined"
-            resp = requests.get(url, params={"asset": cfg["asset_type"], "page": 1, "page_size": 10},
-                                headers=headers, timeout=10)
-            data = resp.json()
-            if data.get("code") == 0:
-                items = data.get("data", {}).get("items", [])
-                if items:
-                    latest_issue = str(items[0].get("issue_id"))
-                    if acc_st.get("current_issue") != latest_issue:
-                        acc_st["current_issue"] = latest_issue
-                        acc_st["total_bets"] += 1
-                        room = random.randint(1, 8)
-                        bet_amt = Decimal(str(cfg["base_bet"]))
-                        
-                        requests.post("https://api.escapemaster.net/escape_game/enter_room",
-                                      json={"asset_type": cfg["asset_type"], "user_id": uid, "room_id": room},
-                                      headers=headers, timeout=10)
-                        time.sleep(0.1)
-                        requests.post("https://api.escapemaster.net/escape_game/bet",
-                                      json={"asset_type": cfg["asset_type"], "user_id": uid, "room_id": room, "bet_amount": float(bet_amt)},
-                                      headers=headers, timeout=10)
-                        
-                        time.sleep(20)
-                        for _ in range(10):
-                            res_resp = requests.get(url, params={"asset": cfg["asset_type"], "page": 1, "page_size": 5},
-                                                    headers=headers, timeout=10)
-                            if res_resp.status_code == 200:
-                                res_items = res_resp.json().get("data", {}).get("items", [])
-                                matched = [it for it in res_items if str(it.get("issue_id")) == latest_issue]
-                                if matched:
-                                    item_res = matched[0]
-                                    killer_room = (
-                                        item_res.get("killer_room_id") or 
-                                        item_res.get("killer_room") or 
-                                        item_res.get("killer") or 
-                                        item_res.get("room_killed")
-                                    )
-                                    if killer_room is not None:
-                                        try:
-                                            k_room_int = int(killer_room)
-                                            if k_room_int in cfg["killer_stats"]:
-                                                cfg["killer_stats"][k_room_int] += 1
-                                            
-                                            if room == k_room_int:
-                                                acc_st["losses"] += 1
-                                                acc_st["total_profit"] -= bet_amt
-                                            else:
-                                                acc_st["wins"] += 1
-                                                acc_st["total_profit"] += (bet_amt * Decimal("0.1"))
-                                            break
-                                        except Exception:
-                                            pass
-                            time.sleep(3)
-        except Exception:
-            pass
-        time.sleep(3)
-
-# ==========================================
-# ENGINE 2: ĐUA TỐC ĐỘ (MARTINGALE FULL LOGIC)
-# ==========================================
-def run_sprint_bot_engine(chat_id, uid, skey):
-    cfg = get_user_config(chat_id)["sprint"]
-    acc_st = get_account_state("sprint", uid)
-    base_api = "https://api.sprintrun.win"
-    
-    headers = {
-        "accept": "*/*",
-        "content-type": "application/json",
-        "origin": "https://sprintrun.win",
-        "referer": "https://sprintrun.win/",
-        "user-agent": "Mozilla/5.0",
-        "user-id": str(uid),
-        "user-login": "login_v2",
-        "user-secret-key": skey
-    }
-
-    while cfg["global_running"] and not acc_st["random_stop"].is_set():
-        try:
-            # 1. Kiểm tra chuỗi thua để tạm nghỉ nếu chạm giới hạn
-            if acc_st["streak_loss"] >= cfg["lose_limit"]:
-                acc_st["streak_loss"] = 0
-                acc_st["current_build"] = Decimal(str(cfg["bet_amount_total"]))
-                rest_time = cfg["rest_rounds"] * 60
-                time.sleep(rest_time)
-                continue
-
-            r = requests.get(f"{base_api}/sprint/home?asset={cfg['asset_type']}", headers=headers, timeout=10)
-            if r.status_code != 200:
-                time.sleep(3)
-                continue
-            
-            res_data = r.json().get("data", {})
-            issue_id = res_data.get("issue_id")
-            expire = res_data.get("expire_seconds", 50)
-            athletes = res_data.get("athlete_list", [])
-
-            if len(athletes) < 3:
-                time.sleep(3)
-                continue
-
-            # Pick 3 VĐV ngẫu nhiên
-            random.shuffle(athletes)
-            chosen_athletes = random.sample(athletes, 3)
-            chosen = [a["id"] for a in chosen_athletes]
-
-            # Tính mức cược hiện tại (có nhân hệ số gấp thếp khi thua)
-            each_bet = acc_st["current_build"].quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
-            total_bet_amount = each_bet * Decimal(len(chosen))
-
-            # Tiến hành đặt cược
-            for aid in chosen:
-                payload = {
-                    "issue_id": issue_id,
-                    "bet_group": "winner",
-                    "asset_type": cfg["asset_type"],
-                    "athlete_id": aid,
-      
