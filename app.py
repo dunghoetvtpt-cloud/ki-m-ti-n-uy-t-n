@@ -886,6 +886,7 @@ def handle_text_messages(message):
         except: pass
 
 def run_escape_bot_engine(chat_id, uid, skey):
+    print(f"DEBUG: Bắt đầu khởi động engine Vua Thoát Hiểm cho UID: {uid}")
     cfg = get_user_config(chat_id)
     escape_cfg = cfg["escape"]
     acc_st = get_account_state("escape", uid)
@@ -913,25 +914,33 @@ def run_escape_bot_engine(chat_id, uid, skey):
             resp = session_req.post("https://api.escapemaster.net/escape_game/enter_room",
                                     json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id)},
                                     headers=get_headers(), timeout=5)
+            print(f"DEBUG enter_room resp: {resp.status_code} - {resp.text}")
             return resp.status_code == 200 and resp.json().get("code") == 0
-        except: return False
+        except Exception as e:
+            print(f"DEBUG enter_room exception: {e}")
+            return False
 
     def place_bet(room_id, amount):
         try:
             resp = session_req.post("https://api.escapemaster.net/escape_game/bet",
                                     json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id), "bet_amount": float(amount)},
                                     headers=get_headers(), timeout=5)
+            print(f"DEBUG place_bet resp: {resp.status_code} - {resp.text}")
             return resp.status_code == 200 and resp.json().get("code") == 0
-        except: return False
+        except Exception as e:
+            print(f"DEBUG place_bet exception: {e}")
+            return False
 
     def get_game_home():
         try:
             resp = session_req.get("https://api.escapemaster.net/escape_game/home",
                                    params={"asset_type": escape_cfg["asset_type"]},
                                    headers=get_headers(), timeout=5)
+            print(f"DEBUG get_game_home resp: {resp.status_code} - {resp.text}")
             if resp.status_code == 200:
                 return resp.json().get("data", {})
-        except: pass
+        except Exception as e:
+            print(f"DEBUG get_game_home exception: {e}")
         return {}
 
     def get_my_joined(page=1):
@@ -969,6 +978,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
             home_data = get_game_home()
             issue_id = str(home_data.get("issue_id") or home_data.get("current_issue") or "")
             count_down = home_data.get("count_down", 0) or home_data.get("countdown", 0)
+            print(f"DEBUG Home Data -> issue_id: {issue_id}, count_down: {count_down}")
 
             if issue_id and issue_id != last_bet_issue and count_down > 3:
                 last_bet_issue = issue_id
@@ -1017,7 +1027,8 @@ def run_escape_bot_engine(chat_id, uid, skey):
                                 time.sleep(2)
                         Thread(target=check_result_loop, daemon=True).start()
 
-        except: pass
+        except Exception as e:
+            print(f"DEBUG Lỗi trong vòng lặp chính escape engine: {e}")
         time.sleep(1.5)
 
 def run_sprint_bot_engine(chat_id, uid, skey):
@@ -1133,7 +1144,7 @@ def run_telebot_polling():
     while True:
         try:
             bot.remove_webhook()
-            time.sleep(1)
+            time.sleep(1>0)
             bot.infinity_polling(timeout=10, long_polling_timeout=5, skip_pending=True)
         except:
             time.sleep(5)
