@@ -9,7 +9,6 @@ from decimal import Decimal, ROUND_DOWN
 from flask import Flask, render_template_string, request, redirect, url_for, session, jsonify
 import telebot
 from telebot import types
-from pymongo import MongoClient
 
 import session_manager
 
@@ -26,75 +25,71 @@ ADMIN_PASSWORD = "dung1612012"
 LINK4M_API_TOKEN = "68a76c1354de3f0da567ca17"
 
 # ---------------------------------------------------------
-# ☁️ KẾT NỐI MONGODB CLOUD (CÓ LOG KIỂM TRA CHI TIẾT)
+# 🗄️ KẾT NỐI JSONBIN.IO (THAY THẾ HOÀN TOÀN MONGODB)
 # ---------------------------------------------------------
-MONGO_URI = os.environ.get("MONGO_URI", "")
-print(f"📌 Đang kết nối MongoDB với URI: {MONGO_URI[:30]}...")
+JSONBIN_BIN_ID = os.environ.get("JSONBIN_BIN_ID", "")
+JSONBIN_API_KEY = os.environ.get("JSONBIN_API_KEY", "")
 
-try:
-    client = MongoClient(MONGO_URI) if MONGO_URI else None
-    db = client["xworld_db"] if client else None
-    keys_collection = db["dunghoet"] if db is not None else None
-    print("✅ Kết nối MongoDB thành công!")
-except Exception as e:
-    print(f"❌ Lỗi kết nối MongoDB: {e}")
-    client, db, keys_collection = None, None, None
+print(f"📌 Đang kết nối JSONBin với Bin ID: {JSONBIN_BIN_ID[:10]}...")
 
 def load_keys():
-    """Lấy danh sách Key từ MongoDB Cloud"""
-    keys_data = {}
-    if keys_collection is not None:
-        try:
-            docs = list(keys_collection.find())
-            print(f"📥 Đã tải {len(docs)} key từ MongoDB.")
-            for doc in docs:
-                k_code = doc.get("key_code") or doc.get("_id")
-                if k_code:
-                    keys_data[str(k_code)] = {
-                        "status": doc.get("status", "chua_dung"),
-                        "used_by": doc.get("used_by"),
-                        "created_at": doc.get("created_at", time.time()),
-                        "expire_at": doc.get("expire_at"),
-                        "duration_hours": doc.get("duration_hours", 24),
-                        "is_vip": doc.get("is_vip", False)
-                    }
-        except Exception as e:
-            print(f"❌ Lỗi đọc MongoDB load_keys: {e}")
-    else:
-        print("⚠️ keys_collection đang là None!")
-    return keys_data
+    """Lấy danh sách Key từ JSONBin"""
+    if not JSONBIN_BIN_ID or not JSONBIN_API_KEY: 
+        print("⚠️ Thiếu JSONBIN_BIN_ID hoặc JSONBIN_API_KEY!")
+        return {}
+    try:
+        url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}/latest"
+        headers = {"X-Master-Key": JSONBIN_API_KEY}
+        res = requests.get(url, headers=headers, timeout=5)
+        if res.status_code == 200:
+            data = res.json().get("record", {})
+            keys_data = data.get("keys", {})
+            print(f"📥 Đã tải {len(keys_data)} key từ JSONBin.")
+            return keys_data
+    except Exception as e:
+        print(f"❌ Lỗi đọc JSONBin load_keys: {e}")
+    return {}
 
 def save_key_to_cloud(key_code, data):
-    """Lưu hoặc cập nhật thông tin Key lên MongoDB Cloud"""
-    if keys_collection is not None:
-        try:
-            keys_collection.update_one(
-                {"key_code": key_code},
-                {"$set": {
-                    "key_code": key_code,
-                    "status": data["status"],
-                    "used_by": data["used_by"],
-                    "created_at": data["created_at"],
-                    "expire_at": data["expire_at"],
-                    "duration_hours": data["duration_hours"],
-                    "is_vip": data["is_vip"]
-                }},
-                upsert=True
-            )
-            print(f"💾 Đã lưu key {key_code} lên MongoDB thành công!")
-        except Exception as e:
-            print(f"❌ Lỗi ghi MongoDB save_key: {e}")
-    else:
-        print("⚠️ Không thể lưu vì keys_collection là None!")
+    """Lưu hoặc cập nhật thông tin Key lên JSONBin"""
+    if not JSONBIN_BIN_ID or not JSONBIN_API_KEY: return
+    try:
+        keys_db = load_keys()
+        keys_db[key_code] = {
+            "status": data.get("status", "chua_dung"),
+            "used_by": data.get("used_by"),
+            "created_at": data.get("created_at", time.time()),
+            "expire_at": data.get("expire_at"),
+            "duration_hours": data.get("duration_hours", 24),
+            "is_vip": data.get("is_vip", False)
+        }
+        
+        url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}"
+        headers = {
+            "Content-Type": "application/json",
+            "X-Master-Key": JSONBIN_API_KEY
+        }
+        requests.put(url, json={"keys": keys_db}, headers=headers, timeout=5)
+        print(f"💾 Đã lưu key {key_code} lên JSONBin thành công!")
+    except Exception as e:
+        print(f"❌ Lỗi ghi JSONBin save_key: {e}")
 
 def delete_key_from_cloud(key_code):
-    """Xóa Key khỏi MongoDB Cloud"""
-    if keys_collection is not None:
-        try:
-            keys_collection.delete_one({"key_code": key_code})
-            print(f"🗑️ Đã xóa key {key_code} khỏi MongoDB.")
-        except Exception as e:
-            print(f"❌ Lỗi xóa MongoDB: {e}")
+    """Xóa Key khỏi JSONBin"""
+    if not JSONBIN_BIN_ID or not JSONBIN_API_KEY: return
+    try:
+        keys_db = load_keys()
+        if key_code in keys_db:
+            del keys_db[key_code]
+            url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}"
+            headers = {
+                "Content-Type": "application/json",
+                "X-Master-Key": JSONBIN_API_KEY
+            }
+            requests.put(url, json={"keys": keys_db}, headers=headers, timeout=5)
+            print(f"🗑️ Đã xóa key {key_code} khỏi JSONBin.")
+    except Exception as e:
+        print(f"❌ Lỗi xóa JSONBin: {e}")
 
 # ---------------------------------------------------------
 # FLASK WEB ROUTES (CỔNG LẤY KEY & TRANG QUẢN TRỊ ADMIN)
@@ -201,7 +196,7 @@ def api_verify_key():
     is_vip = k_data.get("is_vip", False)
     
     if k_data["status"] == "da_dung":
-        if k_data["used_by"] == user_id and time.time() < k_data["expire_at"]:
+        if str(k_data.get("used_by")) == str(user_id) and time.time() < k_data.get("expire_at", 0):
             return {"status": "success", "msg": "Key vẫn còn hiệu lực!", "expire_at": k_data["expire_at"], "is_vip": is_vip}
         return {"status": "error", "msg": "Key đã được sử dụng hoặc hết hạn!"}
         
@@ -268,8 +263,8 @@ def admin_dashboard():
     </style></head>
     <body><div class="container">
         <a href="/admin/logout" class="logout">Đăng xuất</a>
-        <h2>⚙️ Quản Lý Key & Người Dùng (MongoDB Cloud)</h2>
-        <p style="color: #4ade80; font-size: 12px;">☁️ Tự động lưu trên Cloud. Có thể chỉnh sửa số giờ sử dụng của người dùng trực tiếp!</p>
+        <h2>⚙️ Quản Lý Key & Người Dùng (JSONBin.io Cloud)</h2>
+        <p style="color: #4ade80; font-size: 12px;">☁️ Tự động lưu trên Cloud JSONBin an toàn vĩnh viễn.</p>
         
         <div class="box-create">
             <label style="font-size: 13px;">Số giờ mặc định:</label>
@@ -287,7 +282,7 @@ def admin_dashboard():
                 <input type="number" class="hours-input" id="hours_{{ loop.index }}" value="{{ info.get('duration_hours', 24) }}" min="1">
                 <button class="btn-save-hours" onclick="updateKeyHours('{{ k }}', 'hours_{{ loop.index }}')">💾 Lưu</button>
             </td>
-            <td>{% if info.status == 'da_dung' %}<span class="status-used">Đã dùng (ID: {{ info.used_by }})</span>{% else %}<span class="status-new">Chưa dùng</span>{% endif %}</td>
+            <td>{% if info.get('status') == 'da_dung' %}<span class="status-used">Đã dùng (ID: {{ info.get('used_by') }})</span>{% else %}<span class="status-new">Chưa dùng</span>{% endif %}</td>
             <td>
                 <button class="btn-copy-admin" onclick="copyAdminKey('{{ k }}')">📋 Copy</button>
                 <a href="/admin/delete?key={{ k }}" class="btn-del" onclick="return confirm('Xóa key này?')">Xóa</a>
@@ -389,7 +384,7 @@ def admin_update_key_hours():
             k_data = keys_db[key_code]
             k_data["duration_hours"] = new_hours
             
-            if k_data["status"] == "da_dung" and k_data.get("created_at"):
+            if k_data.get("status") == "da_dung" and k_data.get("created_at"):
                 k_data["expire_at"] = k_data["created_at"] + (new_hours * 3600)
                 
             save_key_to_cloud(key_code, k_data)
@@ -1033,7 +1028,7 @@ def handle_text_messages(message):
 # AUTO BOT ENGINES (STRICT LOCK - DECIMAL PRECISION)
 # ---------------------------------------------------------
 def run_escape_bot_engine(chat_id, uid, skey):
-    print(f"🚀 [ESCAPE ENGINE - ANTI REPEAT & DECIMAL] Bắt đầu chạy cho UID: {uid}")
+    print(f"🚀 [ESCAPE ENGINE] Bắt đầu chạy cho UID: {uid}")
     cfg = get_user_config(chat_id)
     escape_cfg = cfg["escape"]
     acc_st = get_account_state("escape", uid)
@@ -1082,10 +1077,8 @@ def run_escape_bot_engine(chat_id, uid, skey):
                                     json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id), "bet_amount": bet_val},
                                     headers=get_headers(), timeout=5)
             res_j = resp.json() if resp.status_code == 200 else {}
-            print(f"🔒 [DECIMAL ONCE BET] Phòng {room_id} | Cược: {bet_val} | Phản hồi: {res_j}")
             return res_j.get("code") == 0
-        except Exception as e:
-            print(f"❌ Lỗi place_bet: {e}")
+        except:
             return False
 
     def get_my_joined(page=1):
@@ -1128,14 +1121,11 @@ def run_escape_bot_engine(chat_id, uid, skey):
                 last_bet_issue = issue_id
                 room = random.randint(1, 8)
                 current_base_bet = escape_cfg["base_bet"]
-
-                print(f"🔄 Ván mới [{issue_id}]: Đặt cược chuẩn mức {current_base_bet}...")
                 
                 if enter_room(room):
                     time.sleep(0.2)
                     if place_bet(room, current_base_bet):
                         acc_st["total_bets"] += 1
-                        print(f"✅ ĐÃ CƯỢC THÀNH CÔNG VÁN {issue_id}! KHÓA CHẶT TỚI VÁN SAU.")
                         
                         def check_res(target_issue):
                             time.sleep(count_down + 3)
@@ -1160,10 +1150,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
                                         acc_st["total_profit"] += Decimal(str(profit))
                         
                         Thread(target=check_res, args=(issue_id,), daemon=True).start()
-
-        except Exception as e:
-            print(f"💥 Lỗi Engine: {e}")
-
+        except: pass
         time.sleep(2)
 
 def run_sprint_bot_engine(chat_id, uid, skey):
