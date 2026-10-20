@@ -926,13 +926,15 @@ def run_escape_bot_engine(chat_id, uid, skey):
             return resp.status_code == 200 and resp.json().get("code") == 0
         except: return False
 
-    def get_my_joined(page=1):
+    def get_current_home():
         try:
-            resp = session_req.get("https://api.escapemaster.net/escape_game/my_joined",
-                                   params={"asset": escape_cfg["asset_type"], "page": page, "page_size": 10},
-                                   headers=get_headers(), timeout=10)
+            resp = session_req.get("https://api.escapemaster.net/escape_game/home",
+                                   params={"asset_type": escape_cfg["asset_type"], "user_id": int(uid)},
+                                   headers=get_headers(), timeout=5)
             if resp.status_code == 200:
-                return resp.json().get("data", {})
+                res_json = resp.json()
+                if res_json.get("code") == 0:
+                    return res_json.get("data", {})
         except: pass
         return {}
 
@@ -956,51 +958,24 @@ def run_escape_bot_engine(chat_id, uid, skey):
             time.sleep(0.000001)
             if place_bet(room, amount):
                 acc_st["total_bets"] += 1
-                
-                def check_api_backup():
-                    time.sleep(15)
-                    data = get_my_joined(1)
-                    items = data.get("items", [])
-                    for item in items:
-                        if str(item.get("issue_id")) == str(issue_id):
-                            award = float(item.get("award_amount", 0))
-                            bet_amt = float(item.get("bet_amount", 0))
-                            is_killed = not (award > bet_amt)
-                            profit = award - bet_amt
-                            
-                            with data_lock:
-                                if is_killed:
-                                    acc_st["losses"] += 1
-                                    acc_st["streak_loss"] += 1
-                                    acc_st["total_profit"] -= Decimal(str(bet_amt))
-                                else:
-                                    acc_st["wins"] += 1
-                                    acc_st["streak_loss"] = 0
-                                    acc_st["total_profit"] += Decimal(str(profit))
-                            return
-                Thread(target=check_api_backup, daemon=True).start()
 
     def start_super_speed_loop():
-        """Vòng lặp siêu tốc 0.000001 giây: Vừa nhảy phòng vừa chủ động quét ván mới để đảm bảo cược liên tục"""
+        """Vòng lặp siêu tốc 0.000001 giây: Vừa nhảy phòng vừa quét API nhà chính để chủ động bắt ván cược"""
         def background_loop():
             rooms = [1, 2, 3, 4, 5, 6, 7, 8]
             while escape_cfg["global_running"] and not acc_st["random_stop"].is_set():
                 r_id = random.choice(rooms)
                 try:
-                    # Nhảy phòng tốc độ 0.000001 giây
+                    # Nhảy phòng tốc độ siêu tốc 0.000001 giây
                     session_req.post("https://api.escapemaster.net/escape_game/enter_room",
                                      json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(r_id)},
                                      headers=get_headers(), timeout=2)
                     
-                    # Quét chủ động lịch sử ván gần nhất để tự bắt ván mới nếu WebSocket bị nghẽn
-                    data = get_my_joined(1)
-                    items = data.get("items", [])
-                    if items:
-                        latest = items[0]
-                        current_issue = str(latest.get("issue_id", ""))
-                        status = latest.get("status") # Trạng thái ván đang diễn ra hoặc chờ
-                        if current_issue and status in [0, 1, "betting", "running"]:
-                            execute_bet_action(current_issue)
+                    # Quét thông tin home hiện tại để lấy issue_id mới nhất và tiến hành cược ngay
+                    home_data = get_current_home()
+                    issue_id = str(home_data.get("issue_id") or home_data.get("id") or "")
+                    if issue_id:
+                        execute_bet_action(issue_id)
                 except: pass
                 time.sleep(0.000001)
         Thread(target=background_loop, daemon=True).start()
