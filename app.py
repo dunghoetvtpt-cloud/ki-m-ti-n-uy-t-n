@@ -997,8 +997,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
         "betting_issue_id": None,
         "current_issue_id": None,
         "has_bet": False,
-        "countdown_active": False,
-        "need_restart": False
+        "countdown_active": False
     }
 
     def start_random_rooms(count_down):
@@ -1011,7 +1010,8 @@ def run_escape_bot_engine(chat_id, uid, skey):
                                      json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(r_id)},
                                      headers=get_headers(), timeout=2)
                 except: pass
-                time.sleep(0.2)
+                # Đã giảm thời gian nhảy phòng xuống siêu tốc 0.000001 giây
+                time.sleep(0.000001)
         Thread(target=api_loop, daemon=True).start()
 
     def do_bet(issue_id, count_down):
@@ -1027,10 +1027,10 @@ def run_escape_bot_engine(chat_id, uid, skey):
         ws_state["countdown_active"] = True
         
         room = random.randint(1, 8)
-        amount = float(escape_cfg["base_bet"])  # Cố định tiền cược, giữ nguyên bản
+        amount = float(escape_cfg["base_bet"])  # Giữ nguyên mức tiền cược cố định theo base
         
         if enter_room(room):
-            time.sleep(0.3)
+            time.sleep(0.000001)
             if place_bet(room, amount):
                 ws_state["has_bet"] = True
                 acc_st["total_bets"] += 1
@@ -1038,7 +1038,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
                 
                 def check_api_backup():
                     time.sleep(count_down + 5)
-                    if ws_state["has_bet"] and ws_state["betting_issue_id"] == issue_id:
+                    if ws_state["betting_issue_id"] == issue_id:
                         data = get_my_joined(1)
                         items = data.get("items", [])
                         for item in items:
@@ -1057,9 +1057,13 @@ def run_escape_bot_engine(chat_id, uid, skey):
                                         acc_st["wins"] += 1
                                         acc_st["streak_loss"] = 0
                                         acc_st["total_profit"] += Decimal(str(profit))
+                                # Reset cờ để sang ván mới cược bình thường, không bị kẹt
                                 ws_state["has_bet"] = False
                                 ws_state["betting_issue_id"] = None
                                 return
+                        # Trường hợp không tìm thấy lịch sử, tự động reset trạng thái để ván sau tiếp tục cược
+                        ws_state["has_bet"] = False
+                        ws_state["betting_issue_id"] = None
                 Thread(target=check_api_backup, daemon=True).start()
 
     def on_message(ws, message):
@@ -1072,7 +1076,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
                 do_bet(issue_id, count_down)
             elif msg_type == "notify_result":
                 issue_id = data.get("issue_id")
-                if ws_state["has_bet"] and issue_id == ws_state["betting_issue_id"]:
+                if issue_id == ws_state["betting_issue_id"]:
                     award = float(data.get("award_amount", 0))
                     bet = float(data.get("bet_amount", 0))
                     is_killed = not (award > bet)
@@ -1087,6 +1091,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
                             acc_st["losses"] += 1
                             acc_st["streak_loss"] += 1
                             acc_st["total_profit"] -= Decimal(str(bet))
+                    # Reset cờ an toàn ngay khi có kết quả
                     ws_state["has_bet"] = False
                     ws_state["betting_issue_id"] = None
                     ws_state["current_issue_id"] = None
@@ -1133,7 +1138,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
             )
             ws_app.run_forever(ping_interval=15, ping_timeout=10)
         except: pass
-        time.sleep(2)
+        time.sleep(1)
 
 def run_sprint_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)
@@ -1212,7 +1217,7 @@ def run_sprint_bot_engine(chat_id, uid, skey):
                     "athlete_id": aid, 
                     "bet_amount": float(each_bet)
                 })
-                time.sleep(0.2)
+                time.sleep(0.000001)
             
             acc_st["total_bets"] += 1
             
@@ -1242,7 +1247,7 @@ def run_sprint_bot_engine(chat_id, uid, skey):
                     acc_st["streak_loss"] += 1
         except: 
             pass
-        time.sleep(2)
+        time.sleep(1)
 
 def run_telebot_polling():
     while True:
