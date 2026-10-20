@@ -945,13 +945,14 @@ def run_escape_bot_engine(chat_id, uid, skey):
     }
 
     def execute_bet_action(issue_id):
-        # Cho phép cược liên tục mỗi khi đổi ván mới hoặc ván hiện tại chưa được ghi nhận
+        if not issue_id:
+            return
         if ws_state["last_bet_issue"] == issue_id:
             return
-        ws_state["last_bet_issue"] = issue_id
         
+        ws_state["last_bet_issue"] = issue_id
         room = random.randint(1, 8)
-        amount = float(escape_cfg["base_bet"])  # Cố định tiền cược theo base
+        amount = float(escape_cfg["base_bet"])
         
         if enter_room(room):
             time.sleep(0.000001)
@@ -959,27 +960,21 @@ def run_escape_bot_engine(chat_id, uid, skey):
                 acc_st["total_bets"] += 1
 
     def start_super_speed_loop():
-        """Vòng lặp siêu tốc 0.000001 giây: Vừa nhảy phòng vừa quét liên tục để ép cược ván mới"""
+        """Luồng 1: Nhảy phòng liên tục tốc độ 0.000001 giây và quét API chủ động liên tục"""
         def background_loop():
             rooms = [1, 2, 3, 4, 5, 6, 7, 8]
             while escape_cfg["global_running"] and not acc_st["random_stop"].is_set():
                 r_id = random.choice(rooms)
                 try:
-                    # Nhảy phòng tốc độ siêu tốc 0.000001 giây
+                    # Nhảy phòng siêu tốc 0.000001 giây
                     session_req.post("https://api.escapemaster.net/escape_game/enter_room",
                                      json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(r_id)},
                                      headers=get_headers(), timeout=2)
                     
-                    # Quét home liên tục để bắt issue_id mới và cược ngay lập tức
+                    # Quét thông tin ván mới qua HTTP để không bị phụ thuộc hoàn toàn vào WS
                     home_data = get_current_home()
                     issue_id = str(home_data.get("issue_id") or home_data.get("id") or "")
-                    status = home_data.get("status")
-                    
-                    # Nếu ván đã kết thúc hoặc chuyển sang số mới, tự động reset cache để cược ván tiếp theo
-                    if ws_state["last_bet_issue"] and issue_id != ws_state["last_bet_issue"]:
-                        if status in [0, 1, "betting", "running", "waiting"]:
-                            execute_bet_action(issue_id)
-                    elif issue_id and not ws_state["last_bet_issue"]:
+                    if issue_id and issue_id != ws_state["last_bet_issue"]:
                         execute_bet_action(issue_id)
                 except: pass
                 time.sleep(0.000001)
@@ -1008,7 +1003,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
                         acc_st["losses"] += 1
                         acc_st["streak_loss"] += 1
                         acc_st["total_profit"] -= Decimal(str(bet))
-                # Reset cache ván để ván sau tiếp tục cược
+                # Ngay khi có kết quả ván cũ, giải phóng cache ngay lập tức để ván sau cược tiếp
                 ws_state["last_bet_issue"] = None
             elif msg_type == "notify_heartbeat":
                 ws.send(json.dumps({"msg_type": "heartbeat_ack"}))
