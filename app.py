@@ -25,12 +25,14 @@ ADMIN_PASSWORD = "dung1612012"
 LINK4M_API_TOKEN = "68a76c1354de3f0da567ca17"
 
 # ---------------------------------------------------------
-# 🗄️ KẾT NỐI JSONBIN.IO (THAY THẾ HOÀN TOÀN MONGODB)
+# 🗄️ KẾT NỐI JSONBIN.IO (KIỂM TRA LOGS BIẾN MÔI TRƯỜNG)
 # ---------------------------------------------------------
 JSONBIN_BIN_ID = os.environ.get("JSONBIN_BIN_ID", "")
 JSONBIN_API_KEY = os.environ.get("JSONBIN_API_KEY", "")
 
-print(f"📌 Đang kết nối JSONBin với Bin ID: {JSONBIN_BIN_ID[:10]}...")
+print(f"🔍 KIỂM TRA BIẾN MÔI TRƯỜNG JSONBIN:")
+print(f" - Bin ID: {'HỢP LỆ (Độ dài: ' + str(len(JSONBIN_BIN_ID)) + ')' if JSONBIN_BIN_ID else '❌ BỊ TRỐNG!'}")
+print(f" - API Key: {'HỢP LỆ (Độ dài: ' + str(len(JSONBIN_API_KEY)) + ')' if JSONBIN_API_KEY else '❌ BỊ TRỐNG!'}")
 
 def load_keys():
     """Lấy danh sách Key từ JSONBin"""
@@ -44,15 +46,19 @@ def load_keys():
         if res.status_code == 200:
             data = res.json().get("record", {})
             keys_data = data.get("keys", {})
-            print(f"📥 Đã tải {len(keys_data)} key từ JSONBin.")
+            print(f"📥 Đã tải {len(keys_data)} key từ JSONBin thành công.")
             return keys_data
+        else:
+            print(f"❌ Lỗi HTTP khi đọc JSONBin: {res.status_code} - {res.text}")
     except Exception as e:
         print(f"❌ Lỗi đọc JSONBin load_keys: {e}")
     return {}
 
 def save_key_to_cloud(key_code, data):
     """Lưu hoặc cập nhật thông tin Key lên JSONBin"""
-    if not JSONBIN_BIN_ID or not JSONBIN_API_KEY: return
+    if not JSONBIN_BIN_ID or not JSONBIN_API_KEY:
+        print("❌ Không thể lưu vì thiếu JSONBIN_BIN_ID hoặc JSONBIN_API_KEY!")
+        return
     try:
         keys_db = load_keys()
         keys_db[key_code] = {
@@ -69,8 +75,11 @@ def save_key_to_cloud(key_code, data):
             "Content-Type": "application/json",
             "X-Master-Key": JSONBIN_API_KEY
         }
-        requests.put(url, json={"keys": keys_db}, headers=headers, timeout=5)
-        print(f"💾 Đã lưu key {key_code} lên JSONBin thành công!")
+        res = requests.put(url, json={"keys": keys_db}, headers=headers, timeout=5)
+        if res.status_code == 200:
+            print(f"💾 Đã lưu key {key_code} lên JSONBin thành công!")
+        else:
+            print(f"❌ Lỗi PUT JSONBin: {res.status_code} - {res.text}")
     except Exception as e:
         print(f"❌ Lỗi ghi JSONBin save_key: {e}")
 
