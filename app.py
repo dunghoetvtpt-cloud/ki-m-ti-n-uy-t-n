@@ -26,7 +26,7 @@ ADMIN_PASSWORD = "dung1612012"
 LINK4M_API_TOKEN = "68a76c1354de3f0da567ca17"
 
 # ---------------------------------------------------------
-# ☁️ KẾT NỐI MONGODB CLOUD (LƯU DỮ LIỆU CỐ ĐỊNH VĨNH VIỄN)
+# ☁️ KẾT NỐI MONGODB CLOUD (SỬA LỖI ĐỒNG BỘ HIỂN THỊ KEY)
 # ---------------------------------------------------------
 MONGO_URI = os.environ.get("MONGO_URI", "")
 client = MongoClient(MONGO_URI) if MONGO_URI else None
@@ -34,20 +34,21 @@ db = client["xworld_db"] if client else None
 keys_collection = db["user_keys"] if db is not None else None
 
 def load_keys():
-    """Lấy danh sách Key từ MongoDB Cloud"""
+    """Lấy danh sách Key từ MongoDB Cloud một cách an toàn nhất"""
     keys_data = {}
     if keys_collection is not None:
         try:
             for doc in keys_collection.find():
-                k_code = doc["key_code"]
-                keys_data[k_code] = {
-                    "status": doc.get("status", "chua_dung"),
-                    "used_by": doc.get("used_by"),
-                    "created_at": doc.get("created_at", time.time()),
-                    "expire_at": doc.get("expire_at"),
-                    "duration_hours": doc.get("duration_hours", 24),
-                    "is_vip": doc.get("is_vip", False)
-                }
+                k_code = doc.get("key_code") or doc.get("_id")
+                if k_code:
+                    keys_data[str(k_code)] = {
+                        "status": doc.get("status", "chua_dung"),
+                        "used_by": doc.get("used_by"),
+                        "created_at": doc.get("created_at", time.time()),
+                        "expire_at": doc.get("expire_at"),
+                        "duration_hours": doc.get("duration_hours", 24),
+                        "is_vip": doc.get("is_vip", False)
+                    }
         except Exception as e:
             print(f"❌ Lỗi đọc MongoDB: {e}")
 
@@ -82,7 +83,7 @@ def delete_key_from_cloud(key_code):
             print(f"❌ Lỗi xóa MongoDB: {e}")
 
 # ---------------------------------------------------------
-# FLASK WEB ROUTES (CỔNG LẤY KEY & DÁNH SÁCH QUẢN TRỊ ADMIN)
+# FLASK WEB ROUTES (CỔNG LẤY KEY & TRANG QUẢN TRỊ ADMIN)
 # ---------------------------------------------------------
 @app.route('/')
 def home():
@@ -374,7 +375,6 @@ def admin_update_key_hours():
             k_data = keys_db[key_code]
             k_data["duration_hours"] = new_hours
             
-            # Nếu Key đã được người dùng kích hoạt, tính toán lại mốc expire_at mới
             if k_data["status"] == "da_dung" and k_data.get("created_at"):
                 k_data["expire_at"] = k_data["created_at"] + (new_hours * 3600)
                 
