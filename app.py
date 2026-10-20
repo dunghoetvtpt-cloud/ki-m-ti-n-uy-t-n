@@ -25,7 +25,7 @@ ADMIN_PASSWORD = "dung1612012"
 LINK4M_API_TOKEN = "68a76c1354de3f0da567ca17"
 
 # ---------------------------------------------------------
-# 🗄️ KẾT NỐI JSONBIN.IO (KIỂM TRA LOGS BIẾN MÔI TRƯỜNG)
+# 🗄️ KẾT NỐI JSONBIN.IO (LUÔN ĐỒNG BỘ DỮ LIỆU)
 # ---------------------------------------------------------
 JSONBIN_BIN_ID = os.environ.get("JSONBIN_BIN_ID", "")
 JSONBIN_API_KEY = os.environ.get("JSONBIN_API_KEY", "")
@@ -46,7 +46,6 @@ def load_keys():
         if res.status_code == 200:
             data = res.json().get("record", {})
             keys_data = data.get("keys", {})
-            print(f"📥 Đã tải {len(keys_data)} key từ JSONBin thành công.")
             return keys_data
         else:
             print(f"❌ Lỗi HTTP khi đọc JSONBin: {res.status_code} - {res.text}")
@@ -63,7 +62,7 @@ def save_key_to_cloud(key_code, data):
         keys_db = load_keys()
         keys_db[key_code] = {
             "status": data.get("status", "chua_dung"),
-            "used_by": data.get("used_by"),
+            "used_by": str(data.get("used_by")) if data.get("used_by") else None,
             "created_at": data.get("created_at", time.time()),
             "expire_at": data.get("expire_at"),
             "duration_hours": data.get("duration_hours", 24),
@@ -197,24 +196,26 @@ def api_verify_key():
     key_code = request.args.get('key', '').strip()
     user_id = request.args.get('user_id', '').strip()
     keys_db = load_keys()
+    
     if key_code not in keys_db:
         return {"status": "error", "msg": "Key không tồn tại!"}
+        
     k_data = keys_db[key_code]
-    
     duration_secs = int(k_data.get("duration_hours", 24) * 3600)
     is_vip = k_data.get("is_vip", False)
     
-    if k_data["status"] == "da_dung":
+    if k_data.get("status") == "da_dung":
         if str(k_data.get("used_by")) == str(user_id) and time.time() < k_data.get("expire_at", 0):
             return {"status": "success", "msg": "Key vẫn còn hiệu lực!", "expire_at": k_data["expire_at"], "is_vip": is_vip}
         return {"status": "error", "msg": "Key đã được sử dụng hoặc hết hạn!"}
         
     k_data["status"] = "da_dung"
-    k_data["used_by"] = user_id
+    k_data["used_by"] = str(user_id)
     expire_time = time.time() + duration_secs
     k_data["expire_at"] = expire_time
+    
     save_key_to_cloud(key_code, k_data)
-    return {"status": "success", "msg": f"Kích hoạt thành công!", "expire_at": expire_time, "is_vip": is_vip}
+    return {"status": "success", "msg": "Kích hoạt thành công!", "expire_at": expire_time, "is_vip": is_vip}
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_login():
@@ -475,21 +476,33 @@ def verify_key_with_server(key_code, user_id):
     try:
         web_url = os.environ.get("RENDER_EXTERNAL_URL", "http://localhost:5000")
         url = f"{web_url}/api/verify_key?key={key_code}&user_id={user_id}"
-        res = requests.get(url, timeout=3)
+        res = requests.get(url, timeout=5)
         return res.json()
     except:
         return {"status": "error", "msg": "Không thể kết nối máy chủ xác thực key!"}
 
 def check_key_validity(chat_id):
+    """Kiểm tra hạn key - Tự động quét từ Cloud nếu RAM bị xóa sau khi restart"""
     cfg = get_user_config(chat_id)
-    if not cfg["has_valid_key"]:
-        return False
-    if time.time() >= cfg.get("key_expire_at", 0):
-        cfg["has_valid_key"] = False
-        cfg["escape"]["global_running"] = False
-        cfg["sprint"]["global_running"] = False
-        return False
-    return True
+    
+    if cfg["has_valid_key"] and time.time() < cfg.get("key_expire_at", 0):
+        return True
+        
+    keys_db = load_keys()
+    for k, info in keys_db.items():
+        if str(info.get("used_by")) == str(chat_id):
+            expire_at = info.get("expire_at", 0)
+            if time.time() < expire_at:
+                cfg["has_valid_key"] = True
+                cfg["key_expire_at"] = expire_at
+                cfg["is_vip"] = info.get("is_vip", False)
+                session_manager.save_session_to_file(chat_id, expire_at)
+                return True
+                
+    cfg["has_valid_key"] = False
+    cfg["escape"]["global_running"] = False
+    cfg["sprint"]["global_running"] = False
+    return False
 
 def reset_user_wait_flags(cfg):
     cfg["waiting_for_link"] = None
@@ -577,9 +590,14 @@ def show_main_menu(chat_id, message_id, is_new=False):
         types.InlineKeyboardButton("🏃 Đua Tốc Độ", callback_data="select_game_sprint")
     )
     try:
-        if is_new: bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
-        else: bot.edit_message_text(msg_text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
-    except: pass
+        # Nếu có message_id cũ thì chỉnh sửa trực tiếp, không tạo tin nhắn mới để tránh rác
+        if not is_new and message_id:
+            bot.edit_message_text(msg_text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
+        else:
+            bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
+    except:
+        try: bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
+        except: pass
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("select_game_"))
 def callback_select_game(call):
@@ -938,8 +956,13 @@ def handle_text_messages(message):
         if res.get("status") == "success" and res.get("is_vip"):
             cfg["is_vip"] = True
             cfg["waiting_for_vip_code"] = False
-            bot.send_message(chat_id, "🎉 **Kích hoạt thành công Tính Năng VIP!**", parse_mode="Markdown")
-            show_game_menu(chat_id, message.message_id, cfg.get("active_game", "escape"))
+            
+            # Xóa tin nhắn yêu cầu cũ
+            if cfg.get("prompt_msg_id"):
+                try: bot.delete_message(chat_id, cfg["prompt_msg_id"])
+                except: pass
+                
+            show_game_menu(chat_id, None, cfg.get("active_game", "escape"))
         else:
             bot.send_message(chat_id, "❌ **Code VIP không hợp lệ!**", parse_mode="Markdown")
         return
@@ -971,9 +994,12 @@ def handle_text_messages(message):
         show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_take_profit)
         return
 
+    # 🔑 XỬ LÝ NHẬP KEY KÍCH HOẠT DỌN SẠCH GIAO DIỆN
     if cfg.get("waiting_for_key"):
+        # 1. Xóa tin nhắn chứa mã Key vừa gửi cho sạch khung chat
         try: bot.delete_message(chat_id, message.message_id)
         except: pass
+        
         res = verify_key_with_server(text, str(chat_id))
         if res.get("status") == "success":
             cfg["has_valid_key"] = True
@@ -981,8 +1007,14 @@ def handle_text_messages(message):
             cfg["is_vip"] = res.get("is_vip", False)
             cfg["key_expire_at"] = res.get("expire_at", time.time() + 86400)
             session_manager.save_session_to_file(chat_id, cfg["key_expire_at"])
-            bot.send_message(chat_id, "✅ **Kích hoạt Key thành công!**", parse_mode="Markdown")
-            show_main_menu(chat_id, message.message_id, is_new=True)
+            
+            prompt_id = cfg.get("prompt_msg_id")
+            
+            # 2. Thay vì gửi tin nhắn rời rạc, biến tin nhắn thông báo cũ thành Menu luôn!
+            if prompt_id:
+                show_main_menu(chat_id, prompt_id, is_new=False)
+            else:
+                show_main_menu(chat_id, None, is_new=True)
         else:
             web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
             markup = types.InlineKeyboardMarkup()
