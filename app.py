@@ -941,18 +941,17 @@ def run_escape_bot_engine(chat_id, uid, skey):
     ws_url = "wss://api.escapemaster.net/escape_master/ws"
     
     ws_state = {
-        "betting_issue_id": None,
         "last_bet_issue": None
     }
 
     def execute_bet_action(issue_id):
+        # Cho phép cược liên tục mỗi khi đổi ván mới hoặc ván hiện tại chưa được ghi nhận
         if ws_state["last_bet_issue"] == issue_id:
             return
         ws_state["last_bet_issue"] = issue_id
-        ws_state["betting_issue_id"] = issue_id
         
         room = random.randint(1, 8)
-        amount = float(escape_cfg["base_bet"])  # Giữ nguyên mức tiền cược cố định theo base
+        amount = float(escape_cfg["base_bet"])  # Cố định tiền cược theo base
         
         if enter_room(room):
             time.sleep(0.000001)
@@ -960,7 +959,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
                 acc_st["total_bets"] += 1
 
     def start_super_speed_loop():
-        """Vòng lặp siêu tốc 0.000001 giây: Vừa nhảy phòng vừa quét API nhà chính để chủ động bắt ván cược"""
+        """Vòng lặp siêu tốc 0.000001 giây: Vừa nhảy phòng vừa quét liên tục để ép cược ván mới"""
         def background_loop():
             rooms = [1, 2, 3, 4, 5, 6, 7, 8]
             while escape_cfg["global_running"] and not acc_st["random_stop"].is_set():
@@ -971,10 +970,16 @@ def run_escape_bot_engine(chat_id, uid, skey):
                                      json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(r_id)},
                                      headers=get_headers(), timeout=2)
                     
-                    # Quét thông tin home hiện tại để lấy issue_id mới nhất và tiến hành cược ngay
+                    # Quét home liên tục để bắt issue_id mới và cược ngay lập tức
                     home_data = get_current_home()
                     issue_id = str(home_data.get("issue_id") or home_data.get("id") or "")
-                    if issue_id:
+                    status = home_data.get("status")
+                    
+                    # Nếu ván đã kết thúc hoặc chuyển sang số mới, tự động reset cache để cược ván tiếp theo
+                    if ws_state["last_bet_issue"] and issue_id != ws_state["last_bet_issue"]:
+                        if status in [0, 1, "betting", "running", "waiting"]:
+                            execute_bet_action(issue_id)
+                    elif issue_id and not ws_state["last_bet_issue"]:
                         execute_bet_action(issue_id)
                 except: pass
                 time.sleep(0.000001)
@@ -989,22 +994,22 @@ def run_escape_bot_engine(chat_id, uid, skey):
                 if issue_id:
                     execute_bet_action(issue_id)
             elif msg_type in ["notify_result", "game_result"]:
-                issue_id = str(data.get("issue_id", ""))
-                if issue_id and issue_id == ws_state["betting_issue_id"]:
-                    award = float(data.get("award_amount", 0))
-                    bet = float(data.get("bet_amount", 0))
-                    is_killed = not (award > bet)
-                    profit = award - bet
-                    
-                    with data_lock:
-                        if not is_killed:
-                            acc_st["wins"] += 1
-                            acc_st["streak_loss"] = 0
-                            acc_st["total_profit"] += Decimal(str(profit))
-                        else:
-                            acc_st["losses"] += 1
-                            acc_st["streak_loss"] += 1
-                            acc_st["total_profit"] -= Decimal(str(bet))
+                award = float(data.get("award_amount", 0))
+                bet = float(data.get("bet_amount", 0))
+                is_killed = not (award > bet)
+                profit = award - bet
+                
+                with data_lock:
+                    if not is_killed:
+                        acc_st["wins"] += 1
+                        acc_st["streak_loss"] = 0
+                        acc_st["total_profit"] += Decimal(str(profit))
+                    else:
+                        acc_st["losses"] += 1
+                        acc_st["streak_loss"] += 1
+                        acc_st["total_profit"] -= Decimal(str(bet))
+                # Reset cache ván để ván sau tiếp tục cược
+                ws_state["last_bet_issue"] = None
             elif msg_type == "notify_heartbeat":
                 ws.send(json.dumps({"msg_type": "heartbeat_ack"}))
         except: pass
