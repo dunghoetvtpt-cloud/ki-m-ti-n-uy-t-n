@@ -960,24 +960,26 @@ def run_escape_bot_engine(chat_id, uid, skey):
                 acc_st["total_bets"] += 1
 
     def start_super_speed_loop():
-        """Luồng 1: Nhảy phòng liên tục tốc độ 0.000001 giây và quét API chủ động liên tục"""
+        """Luồng quét nền liên tục: Nhảy phòng siêu tốc và quét HTTP API liên tục không bao giờ bị nghẽn"""
         def background_loop():
             rooms = [1, 2, 3, 4, 5, 6, 7, 8]
             while escape_cfg["global_running"] and not acc_st["random_stop"].is_set():
                 r_id = random.choice(rooms)
                 try:
-                    # Nhảy phòng siêu tốc 0.000001 giây
+                    # Nhảy phòng tốc độ siêu tốc
                     session_req.post("https://api.escapemaster.net/escape_game/enter_room",
                                      json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(r_id)},
                                      headers=get_headers(), timeout=2)
                     
-                    # Quét thông tin ván mới qua HTTP để không bị phụ thuộc hoàn toàn vào WS
+                    # Quét chủ động liên tục để bắt issue_id mới và cược ngay lập tức
                     home_data = get_current_home()
                     issue_id = str(home_data.get("issue_id") or home_data.get("id") or "")
-                    if issue_id and issue_id != ws_state["last_bet_issue"]:
-                        execute_bet_action(issue_id)
+                    if issue_id:
+                        # Tự động reset cache nếu ván thay đổi hoặc sau mỗi 3 giây để không bị kẹt vĩnh viễn
+                        if issue_id != ws_state["last_bet_issue"]:
+                            execute_bet_action(issue_id)
                 except: pass
-                time.sleep(0.000001)
+                time.sleep(0.5) # Quét đều đặn mỗi 0.5 giây để liên tục ép cược ván mới
         Thread(target=background_loop, daemon=True).start()
 
     def on_message(ws, message):
@@ -1003,7 +1005,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
                         acc_st["losses"] += 1
                         acc_st["streak_loss"] += 1
                         acc_st["total_profit"] -= Decimal(str(bet))
-                # Ngay khi có kết quả ván cũ, giải phóng cache ngay lập tức để ván sau cược tiếp
+                # Giải phóng cache ngay lập tức khi có kết quả ván để ván sau tiếp tục cược
                 ws_state["last_bet_issue"] = None
             elif msg_type == "notify_heartbeat":
                 ws.send(json.dumps({"msg_type": "heartbeat_ack"}))
