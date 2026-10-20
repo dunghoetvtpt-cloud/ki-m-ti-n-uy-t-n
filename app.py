@@ -9,32 +9,95 @@ from decimal import Decimal, ROUND_DOWN
 from flask import Flask, render_template_string, request, redirect, url_for, session, jsonify
 import telebot
 from telebot import types
+from pymongo import MongoClient
 
 import session_manager
 
+# ---------------------------------------------------------
+# CẤU HÌNH BOT TELEGRAM & FLASK WEB
+# ---------------------------------------------------------
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, parse_mode="Markdown")
 
 app = Flask(__name__)
 app.secret_key = "dung_license_secret_key_1612012"
 
-KEYS_DB_FILE = "keys_db.json"
 ADMIN_PASSWORD = "dung1612012"
 LINK4M_API_TOKEN = "68a76c1354de3f0da567ca17"
 
+# ---------------------------------------------------------
+# ☁️ KẾT NỐI MONGODB CLOUD (KHÁNG RESET / LƯU KEY VĨNH VIỄN)
+# ---------------------------------------------------------
+MONGO_URI = os.environ.get("MONGO_URI", "")
+client = MongoClient(MONGO_URI) if MONGO_URI else None
+db = client["xworld_db"] if client else None
+keys_collection = db["user_keys"] if db is not None else None
+
 def load_keys():
-    if os.path.exists(KEYS_DB_FILE):
+    """Lấy danh sách Key từ MongoDB Cloud"""
+    keys_data = {}
+    if keys_collection is not None:
         try:
-            with open(KEYS_DB_FILE, "r") as f:
-                return json.load(f)
-        except:
-            pass
-    return {}
+            for doc in keys_collection.find():
+                k_code = doc["key_code"]
+                keys_data[k_code] = {
+                    "status": doc.get("status", "chua_dung"),
+                    "used_by": doc.get("used_by"),
+                    "created_at": doc.get("created_at", time.time()),
+                    "expire_at": doc.get("expire_at"),
+                    "duration_hours": doc.get("duration_hours", 24),
+                    "is_vip": doc.get("is_vip", False)
+                }
+        except Exception as e:
+            print(f"❌ Lỗi đọc MongoDB: {e}")
 
-def save_keys(keys_data):
-    with open(KEYS_DB_FILE, "w") as f:
-        json.dump(keys_data, f, indent=4)
+    # Tự tạo Key Master Admin vĩnh viễn nếu chưa có trong Database
+    master_admin_key = "ADMIN-DUNG1612"
+    if master_admin_key not in keys_data:
+        master_data = {
+            "status": "chua_dung",
+            "used_by": None,
+            "created_at": time.time(),
+            "expire_at": None,
+            "duration_hours": 999999,
+            "is_vip": True
+        }
+        save_key_to_cloud(master_admin_key, master_data)
+        keys_data[master_admin_key] = master_data
 
+    return keys_data
+
+def save_key_to_cloud(key_code, data):
+    """Lưu hoặc cập nhật thông tin Key lên MongoDB Cloud"""
+    if keys_collection is not None:
+        try:
+            keys_collection.update_one(
+                {"key_code": key_code},
+                {"$set": {
+                    "key_code": key_code,
+                    "status": data["status"],
+                    "used_by": data["used_by"],
+                    "created_at": data["created_at"],
+                    "expire_at": data["expire_at"],
+                    "duration_hours": data["duration_hours"],
+                    "is_vip": data["is_vip"]
+                }},
+                upsert=True
+            )
+        except Exception as e:
+            print(f"❌ Lỗi ghi MongoDB: {e}")
+
+def delete_key_from_cloud(key_code):
+    """Xóa Key khỏi MongoDB Cloud"""
+    if keys_collection is not None:
+        try:
+            keys_collection.delete_one({"key_code": key_code})
+        except Exception as e:
+            print(f"❌ Lỗi xóa MongoDB: {e}")
+
+# ---------------------------------------------------------
+# FLASK WEB ROUTES (CỔNG LẤY KEY & TRANG QUẢN TRỊ ADMIN)
+# ---------------------------------------------------------
 @app.route('/')
 def home():
     new_key = request.args.get("key", "")
@@ -53,9 +116,11 @@ def home():
             .badge { background: linear-gradient(90deg, #0284c7, #38bdf8); color: #fff; padding: 6px 16px; border-radius: 20px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
             h2 { color: #38bdf8; margin: 20px 0 10px; font-size: 22px; }
             p { color: #94a3b8; font-size: 13px; line-height: 1.6; margin-bottom: 25px; }
-            .btn { display: block; background: linear-gradient(90deg, #0284c7, #6366f1); color: #fff; text-decoration: none; padding: 15px; border-radius: 14px; font-weight: bold; font-size: 15px; box-shadow: 0 8px 20px rgba(2, 132, 199, 0.4); }
+            .btn { display: block; background: linear-gradient(90deg, #0284c7, #6366f1); color: #fff; text-decoration: none; padding: 15px; border-radius: 14px; font-weight: bold; font-size: 15px; box-shadow: 0 8px 20px rgba(2, 132, 199, 0.4); cursor: pointer; border: none; width: 100%; text-align: center; }
             .btn-admin { display: block; background: rgba(51, 65, 85, 0.6); color: #94a3b8; text-decoration: none; padding: 12px; border-radius: 12px; font-size: 13px; margin-top: 15px; }
-            .key-box { background: #0b0f19; border: 2px dashed #38bdf8; padding: 14px; border-radius: 12px; margin-top: 15px; font-family: monospace; font-size: 16px; color: #4ade80; word-break: break-all; }
+            .key-container { display: flex; gap: 8px; margin-top: 15px; align-items: center; }
+            .key-box { flex: 1; background: #0b0f19; border: 2px dashed #38bdf8; padding: 12px; border-radius: 12px; font-family: monospace; font-size: 15px; color: #4ade80; word-break: break-all; text-align: center; }
+            .btn-copy { background: #22c55e; color: #fff; border: none; padding: 12px 15px; border-radius: 12px; font-weight: bold; cursor: pointer; font-size: 13px; }
             .error { background: rgba(248, 113, 113, 0.1); border: 1px solid #f87171; color: #f87171; padding: 10px; border-radius: 10px; font-size: 13px; margin-top: 15px; }
         </style>
     </head>
@@ -66,8 +131,11 @@ def home():
             <h2>XWORLD GATEWAY</h2>
             <p>Vượt link Link4m an toàn và nhanh chóng để nhận mã bản quyền sử dụng trong 24 giờ cố định.</p>
             {% if new_key %}
-                <div class="key-box"><b>{{ new_key }}</b></div>
-                <p style="color: #4ade80; margin-top: 12px; font-weight: bold;">👉 Sao chép mã trên dán vào Bot Telegram!</p>
+                <div class="key-container">
+                    <div class="key-box" id="keyText"><b>{{ new_key }}</b></div>
+                    <button class="btn-copy" onclick="copyKey('{{ new_key }}')">📋 Sao chép</button>
+                </div>
+                <p id="copyStatus" style="color: #4ade80; margin-top: 12px; font-weight: bold; display:none;">✨ Đã sao chép mã vào bộ nhớ tạm!</p>
             {% else %}
                 <a href="/get_link4m" class="btn">🚀 TIẾN HÀNH LẤY KEY (24H)</a>
             {% endif %}
@@ -76,6 +144,15 @@ def home():
             {% endif %}
             <a href="/admin" class="btn-admin">⚙️ Đăng nhập Quản trị viên</a>
         </div>
+        <script>
+        function copyKey(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                let status = document.getElementById("copyStatus");
+                status.style.display = "block";
+                setTimeout(() => { status.style.display = "none"; }, 3000);
+            });
+        }
+        </script>
     </body>
     </html>
     """
@@ -98,9 +175,8 @@ def get_link4m():
 
 @app.route('/claim_key')
 def claim_key():
-    keys_db = load_keys()
     new_key = "KEY-XW-" + ''.join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=8))
-    keys_db[new_key] = {
+    key_data = {
         "status": "chua_dung", 
         "used_by": None, 
         "created_at": time.time(), 
@@ -108,7 +184,7 @@ def claim_key():
         "duration_hours": 24,
         "is_vip": False
     }
-    save_keys(keys_db)
+    save_key_to_cloud(new_key, key_data)
     return redirect(url_for('home', key=new_key))
 
 @app.route('/api/verify_key')
@@ -132,7 +208,7 @@ def api_verify_key():
     k_data["used_by"] = user_id
     expire_time = time.time() + duration_secs
     k_data["expire_at"] = expire_time
-    save_keys(keys_db)
+    save_key_to_cloud(key_code, k_data)
     return {"status": "success", "msg": f"Kích hoạt thành công!", "expire_at": expire_time, "is_vip": is_vip}
 
 @app.route('/admin', methods=['GET', 'POST'])
@@ -173,22 +249,25 @@ def admin_dashboard():
     <!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Quản Lý Key</title>
     <style>
         body { background: #0f172a; color: #fff; font-family: sans-serif; padding: 20px; margin: 0; }
-        .container { max-width: 750px; margin: 0 auto; background: #1e293b; padding: 20px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        .container { max-width: 800px; margin: 0 auto; background: #1e293b; padding: 20px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
         h2 { color: #38bdf8; margin-top: 0; font-size: 20px; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }
         th, td { padding: 10px; border-bottom: 1px solid #334155; text-align: left; }
         th { color: #94a3b8; }
         .btn-del { background: #ef4444; color: #fff; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; text-decoration: none; }
+        .btn-copy-admin { background: #0284c7; color: #fff; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; margin-left: 5px; }
         .btn-add { background: #22c55e; color: #fff; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; font-weight: bold; }
         .btn-vip { background: #eab308; color: #000; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; font-weight: bold; }
         .logout { float: right; color: #94a3b8; text-decoration: none; font-size: 14px; }
         .status-used { color: #f87171; } .status-new { color: #4ade80; }
         .box-create { background: #0f172a; padding: 15px; border-radius: 10px; margin-bottom: 15px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
         .box-create input { padding: 8px; border-radius: 6px; border: 1px solid #475569; background: #1e293b; color: #fff; width: 100px; }
+        #toast { position: fixed; bottom: 20px; right: 20px; background: #22c55e; color: #fff; padding: 10px 20px; border-radius: 8px; font-size: 13px; display: none; box-shadow: 0 5px 15px rgba(0,0,0,0.3); z-index: 1000; }
     </style></head>
     <body><div class="container">
         <a href="/admin/logout" class="logout">Đăng xuất</a>
-        <h2>⚙️ Quản Lý Key Bản Quyền & Code VIP</h2>
+        <h2>⚙️ Quản Lý Key Bản Quyền & Code VIP (MongoDB Cloud)</h2>
+        <p style="color: #4ade80; font-size: 12px;">☁️ Dữ liệu đã lưu trực tiếp trên Cloud MongoDB. Thoải mái dán code mới không bao giờ bị mất key!</p>
         
         <div class="box-create">
             <label style="font-size: 13px;">Số giờ:</label>
@@ -197,16 +276,21 @@ def admin_dashboard():
             <button class="btn-vip" onclick="createCustomKey(true)">👑 Tạo Code VIP</button>
         </div>
 
-        <table><tr><th>Mã Key / VIP</th><th>Loại</th><th>Thời Hạn</th><th>Trạng Thái & User</th><th>Xóa</th></tr>
+        <table><tr><th>Mã Key / VIP</th><th>Loại</th><th>Thời Hạn</th><th>Trạng Thái & User</th><th>Thao Tác</th></tr>
         {% for k, info in keys.items() %}
         <tr>
             <td><code>{{ k }}</code></td>
             <td>{% if info.get('is_vip') %}<b style="color:#eab308">VIP 👑</b>{% else %}<span style="color:#94a3b8">Thường</span>{% endif %}</td>
             <td><b>{{ info.get('duration_hours', 24) }}h</b></td>
             <td>{% if info.status == 'da_dung' %}<span class="status-used">Đã dùng (ID: {{ info.used_by }})</span>{% else %}<span class="status-new">Chưa dùng</span>{% endif %}</td>
-            <td><a href="/admin/delete?key={{ k }}" class="btn-del" onclick="return confirm('Xóa key này?')">Xóa</a></td>
+            <td>
+                <button class="btn-copy-admin" onclick="copyAdminKey('{{ k }}')">📋 Copy</button>
+                <a href="/admin/delete?key={{ k }}" class="btn-del" onclick="return confirm('Xóa key này?')">Xóa</a>
+            </td>
         </tr>
         {% endfor %}</table></div>
+    
+    <div id="toast">✨ Đã sao chép mã thành công!</div>
 
     <script>
     function createCustomKey(isVip) {
@@ -225,6 +309,14 @@ def admin_dashboard():
             }
         });
     }
+
+    function copyAdminKey(text) {
+        navigator.clipboard.writeText(text).then(() => {
+            let toast = document.getElementById("toast");
+            toast.style.display = "block";
+            setTimeout(() => { toast.style.display = "none"; }, 2000);
+        });
+    }
     </script>
     </body></html>
     """
@@ -239,11 +331,10 @@ def admin_create_custom_key():
         hours = float(req_data.get("hours", 24))
         is_vip = bool(req_data.get("is_vip", False))
         
-        keys_db = load_keys()
         prefix = "VIP-" if is_vip else "ADMIN-"
         new_key = prefix + ''.join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=8))
         
-        keys_db[new_key] = {
+        key_data = {
             "status": "chua_dung",
             "used_by": None,
             "created_at": time.time(),
@@ -251,7 +342,7 @@ def admin_create_custom_key():
             "duration_hours": hours,
             "is_vip": is_vip
         }
-        save_keys(keys_db)
+        save_key_to_cloud(new_key, key_data)
         return jsonify({"success": True, "key": new_key})
     except Exception as e:
         return jsonify({"success": False, "msg": str(e)})
@@ -260,8 +351,7 @@ def admin_create_custom_key():
 def admin_delete():
     if not session.get('admin_logged'): return redirect(url_for('admin_login'))
     k = request.args.get('key')
-    keys_db = load_keys()
-    if k in keys_db: del keys_db[k]; save_keys(keys_db)
+    if k: delete_key_from_cloud(k)
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/logout')
@@ -269,6 +359,9 @@ def admin_logout():
     session.pop('admin_logged', None)
     return redirect(url_for('admin_login'))
 
+# ---------------------------------------------------------
+# CẤU HÌNH USER VÀ TELEGRAM BOT LOGIC
+# ---------------------------------------------------------
 user_data = {}
 data_lock = Lock()
 
@@ -387,7 +480,7 @@ def callback_nhap_key_btn(call):
     cfg["waiting_for_key"] = True
     cfg["prompt_msg_id"] = call.message.message_id
     
-    text = "🔑 **Vui lòng nhập mã Key của bạn vào đây**\n*(Ví dụ: `KEY-XW-XXXXXXXX` hoặc `ADMIN-XXXXXXXX`):*"
+    text = "🔑 **Vui lòng nhập mã Key của bạn vào đây**\n*(Ví dụ: `KEY-XW-XXXXXXXX` hoặc `ADMIN-DUNG1612`):*"
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("⬅️ Quay lại", callback_data="btn_back_start"))
     try: bot.edit_message_text(text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
@@ -579,7 +672,7 @@ def callback_game_actions(call):
                 "• 🛑 Tự dừng khi thua liên tiếp X ván\n"
                 "• 📉 Tự ngắt khi chạm ngưỡng Cắt Lỗ\n"
                 "• 🎯 Tự ngắt khi đạt mục tiêu Chốt Lời\n\n"
-                "👉 **Vui lòng nhập Mã Code VIP để mở khóa:**"
+                "👉 **Vui lòng nhập Mã Code VIP để mở khóa (Hoặc dùng `ADMIN-DUNG1612`):**"
             )
             try: bot.edit_message_text(msg_vip, chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
             except: pass
@@ -637,7 +730,7 @@ def callback_game_actions(call):
         cfg["prompt_msg_id"] = call.message.message_id
         try:
             bot.answer_callback_query(call.id)
-            bot.edit_message_text(f"✏️ **Nhập số tiền cược cho [ {game_name_vi} ]:**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
+            bot.edit_message_text(f"✏️ **Nhập số tiền cược cho [ {game_name_vi} ] (Hỗ trợ số thập phân như `0.01`, `0.5`):**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
         except: pass
     elif action == "input_rounds":
         reset_user_wait_flags(cfg)
@@ -780,7 +873,7 @@ def handle_text_messages(message):
             show_game_menu(chat_id, prompt_id, game_target_bet)
             return
         except:
-            bot.send_message(chat_id, "⚠️ Vui lòng chỉ nhập số tiền cược hợp lệ!")
+            bot.send_message(chat_id, "⚠️ Vui lòng chỉ nhập số tiền cược hợp lệ (ví dụ: `1`, `0.01`, `0.5`)!")
             return
 
     if cfg.get("waiting_for_vip_code"):
@@ -885,8 +978,11 @@ def handle_text_messages(message):
         try: bot.delete_message(chat_id, message.message_id)
         except: pass
 
+# ---------------------------------------------------------
+# AUTO BOT ENGINES (CƯỢC CHẮC CHẮN - STRICT LOCK - ANTI REPEAT)
+# ---------------------------------------------------------
 def run_escape_bot_engine(chat_id, uid, skey):
-    print(f"🚀 [ESCAPE ENGINE] Bắt đầu khởi chạy cho User ID: {uid}")
+    print(f"🚀 [ESCAPE ENGINE - ANTI REPEAT & DECIMAL] Bắt đầu chạy cho UID: {uid}")
     cfg = get_user_config(chat_id)
     escape_cfg = cfg["escape"]
     acc_st = get_account_state("escape", uid)
@@ -908,25 +1004,34 @@ def run_escape_bot_engine(chat_id, uid, skey):
             "Accept": "application/json"
         }
 
+    def get_game_home():
+        try:
+            resp = session_req.get("https://api.escapemaster.net/escape_game/home",
+                                   params={"asset_type": escape_cfg["asset_type"]},
+                                   headers=get_headers(), timeout=5)
+            if resp.status_code == 200:
+                return resp.json().get("data", {})
+        except: pass
+        return {}
+
     def enter_room(room_id):
         try:
             resp = session_req.post("https://api.escapemaster.net/escape_game/enter_room",
                                     json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id)},
                                     headers=get_headers(), timeout=5)
             res_j = resp.json() if resp.status_code == 200 else {}
-            print(f"👉 Enter Room {room_id}: {res_j}")
             return res_j.get("code") == 0
-        except Exception as e:
-            print(f"❌ Lỗi enter_room: {e}")
+        except:
             return False
 
-    def place_bet(room_id, amount):
+    def place_bet(room_id, fixed_amount):
         try:
+            bet_val = float(Decimal(str(fixed_amount)))
             resp = session_req.post("https://api.escapemaster.net/escape_game/bet",
-                                    json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id), "bet_amount": float(amount)},
+                                    json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id), "bet_amount": bet_val},
                                     headers=get_headers(), timeout=5)
             res_j = resp.json() if resp.status_code == 200 else {}
-            print(f"🎲 Bet Result Room {room_id} ({amount}): {res_j}")
+            print(f"🔒 [DECIMAL ONCE BET] Phòng {room_id} | Cược: {bet_val} | Phản hồi: {res_j}")
             return res_j.get("code") == 0
         except Exception as e:
             print(f"❌ Lỗi place_bet: {e}")
@@ -941,6 +1046,8 @@ def run_escape_bot_engine(chat_id, uid, skey):
                 return resp.json().get("data", {})
         except: pass
         return {}
+
+    last_bet_issue = None
 
     while escape_cfg["global_running"] and not acc_st["random_stop"].is_set():
         if escape_cfg.get("max_continuous_losses", 0) > 0 and acc_st["streak_loss"] >= escape_cfg["max_continuous_losses"]:
@@ -962,48 +1069,51 @@ def run_escape_bot_engine(chat_id, uid, skey):
         if escape_cfg.get("max_rounds", 0) > 0 and acc_st["total_bets"] >= escape_cfg["max_rounds"]: break
 
         try:
-            room = random.randint(1, 8)
-            amount = float(escape_cfg["base_bet"])
+            home_data = get_game_home()
+            issue_id = str(home_data.get("issue_id") or home_data.get("current_issue") or "")
+            count_down = home_data.get("count_down", 0) or home_data.get("countdown", 0)
 
-            print(f"🔄 Đang tiến hành thử cược ván mới ở Phòng {room}...")
-            
-            if enter_room(room):
-                time.sleep(0.2)
-                if place_bet(room, amount):
-                    acc_st["total_bets"] += 1
-                    print(f"✅ ĐÃ ĐẶT CƯỢC THÀNH CÔNG VÁN THỨ {acc_st['total_bets']}!")
-                    
-                    time.sleep(40)
-                    
-                    history_data = get_my_joined(1)
-                    items = history_data.get("items", [])
-                    if items:
-                        item = items[0]
-                        award = float(item.get("award_amount", 0))
-                        bet_amt = float(item.get("bet_amount", 0))
-                        is_killed = not (award > bet_amt)
-                        profit = award - bet_amt
+            if issue_id and issue_id != last_bet_issue and count_down > 3:
+                last_bet_issue = issue_id
+                room = random.randint(1, 8)
+                current_base_bet = escape_cfg["base_bet"]
+
+                print(f"🔄 Ván mới [{issue_id}]: Đặt cược chuẩn mức {current_base_bet}...")
+                
+                if enter_room(room):
+                    time.sleep(0.2)
+                    if place_bet(room, current_base_bet):
+                        acc_st["total_bets"] += 1
+                        print(f"✅ ĐÃ CƯỢC THÀNH CÔNG VÁN {issue_id}! KHÓA CHẶT TỚI VÁN SAU.")
                         
-                        with data_lock:
-                            if is_killed:
-                                acc_st["losses"] += 1
-                                acc_st["streak_loss"] += 1
-                                acc_st["total_profit"] -= Decimal(str(bet_amt))
-                                print(f"🔴 Ván này THUA: -{bet_amt}")
-                            else:
-                                acc_st["wins"] += 1
-                                acc_st["streak_loss"] = 0
-                                acc_st["total_profit"] += Decimal(str(profit))
-                                print(f"🟢 Ván này THẮNG: +{profit}")
-                else:
-                    print("⚠️ Không thể đặt cược (Có thể do đã hết thời gian cược ván này hoặc không đủ số dư).")
-            else:
-                print("⚠️ Không thể vào phòng (Server bận).")
+                        def check_res(target_issue):
+                            time.sleep(count_down + 3)
+                            history_data = get_my_joined(1)
+                            items = history_data.get("items", [])
+                            matched = [it for it in items if str(it.get("issue_id")) == str(target_issue)]
+                            if matched:
+                                item = matched[0]
+                                award = float(item.get("award_amount", 0))
+                                bet_amt = float(item.get("bet_amount", 0))
+                                is_killed = not (award > bet_amt)
+                                profit = award - bet_amt
+                                
+                                with data_lock:
+                                    if is_killed:
+                                        acc_st["losses"] += 1
+                                        acc_st["streak_loss"] += 1
+                                        acc_st["total_profit"] -= Decimal(str(bet_amt))
+                                    else:
+                                        acc_st["wins"] += 1
+                                        acc_st["streak_loss"] = 0
+                                        acc_st["total_profit"] += Decimal(str(profit))
+                        
+                        Thread(target=check_res, args=(issue_id,), daemon=True).start()
 
         except Exception as e:
             print(f"💥 Lỗi Engine: {e}")
 
-        time.sleep(3)
+        time.sleep(2)
 
 def run_sprint_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)
@@ -1123,6 +1233,9 @@ def run_telebot_polling():
         except:
             time.sleep(5)
 
+# ---------------------------------------------------------
+# KHỞI CHẠY ỨNG DỤNG
+# ---------------------------------------------------------
 if __name__ == "__main__":
     Thread(target=run_telebot_polling, daemon=True).start()
     port = int(os.environ.get("PORT", 5000))
