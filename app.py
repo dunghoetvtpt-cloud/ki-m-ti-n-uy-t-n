@@ -26,7 +26,7 @@ ADMIN_PASSWORD = "dung1612012"
 LINK4M_API_TOKEN = "68a76c1354de3f0da567ca17"
 
 # ---------------------------------------------------------
-# ☁️ KẾT NỐI MONGODB CLOUD (KHÁNG RESET / LƯU KEY VĨNH VIỄN)
+# ☁️ KẾT NỐI MONGODB CLOUD (LƯU DỮ LIỆU CỐ ĐỊNH VĨNH VIỄN)
 # ---------------------------------------------------------
 MONGO_URI = os.environ.get("MONGO_URI", "")
 client = MongoClient(MONGO_URI) if MONGO_URI else None
@@ -50,20 +50,6 @@ def load_keys():
                 }
         except Exception as e:
             print(f"❌ Lỗi đọc MongoDB: {e}")
-
-    # Tự tạo Key Master Admin vĩnh viễn nếu chưa có trong Database
-    master_admin_key = "ADMIN-DUNG1612"
-    if master_admin_key not in keys_data:
-        master_data = {
-            "status": "chua_dung",
-            "used_by": None,
-            "created_at": time.time(),
-            "expire_at": None,
-            "duration_hours": 999999,
-            "is_vip": True
-        }
-        save_key_to_cloud(master_admin_key, master_data)
-        keys_data[master_admin_key] = master_data
 
     return keys_data
 
@@ -96,7 +82,7 @@ def delete_key_from_cloud(key_code):
             print(f"❌ Lỗi xóa MongoDB: {e}")
 
 # ---------------------------------------------------------
-# FLASK WEB ROUTES (CỔNG LẤY KEY & TRANG QUẢN TRỊ ADMIN)
+# FLASK WEB ROUTES (CỔNG LẤY KEY & DÁNH SÁCH QUẢN TRỊ ADMIN)
 # ---------------------------------------------------------
 @app.route('/')
 def home():
@@ -246,42 +232,46 @@ def admin_dashboard():
     if not session.get('admin_logged'): return redirect(url_for('admin_login'))
     keys_db = load_keys()
     html = """
-    <!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Quản Lý Key</title>
+    <!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Quản Lý Key & User</title>
     <style>
-        body { background: #0f172a; color: #fff; font-family: sans-serif; padding: 20px; margin: 0; }
-        .container { max-width: 800px; margin: 0 auto; background: #1e293b; padding: 20px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        body { background: #0f172a; color: #fff; font-family: sans-serif; padding: 15px; margin: 0; }
+        .container { max-width: 900px; margin: 0 auto; background: #1e293b; padding: 20px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
         h2 { color: #38bdf8; margin-top: 0; font-size: 20px; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }
         th, td { padding: 10px; border-bottom: 1px solid #334155; text-align: left; }
         th { color: #94a3b8; }
         .btn-del { background: #ef4444; color: #fff; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; text-decoration: none; }
         .btn-copy-admin { background: #0284c7; color: #fff; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; margin-left: 5px; }
+        .btn-save-hours { background: #3b82f6; color: #fff; border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 11px; margin-left: 4px; }
         .btn-add { background: #22c55e; color: #fff; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; font-weight: bold; }
         .btn-vip { background: #eab308; color: #000; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; font-weight: bold; }
         .logout { float: right; color: #94a3b8; text-decoration: none; font-size: 14px; }
         .status-used { color: #f87171; } .status-new { color: #4ade80; }
         .box-create { background: #0f172a; padding: 15px; border-radius: 10px; margin-bottom: 15px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-        .box-create input { padding: 8px; border-radius: 6px; border: 1px solid #475569; background: #1e293b; color: #fff; width: 100px; }
+        .box-create input, .hours-input { padding: 6px 8px; border-radius: 6px; border: 1px solid #475569; background: #1e293b; color: #fff; width: 60px; font-size: 12px; }
         #toast { position: fixed; bottom: 20px; right: 20px; background: #22c55e; color: #fff; padding: 10px 20px; border-radius: 8px; font-size: 13px; display: none; box-shadow: 0 5px 15px rgba(0,0,0,0.3); z-index: 1000; }
     </style></head>
     <body><div class="container">
         <a href="/admin/logout" class="logout">Đăng xuất</a>
-        <h2>⚙️ Quản Lý Key Bản Quyền & Code VIP (MongoDB Cloud)</h2>
-        <p style="color: #4ade80; font-size: 12px;">☁️ Dữ liệu đã lưu trực tiếp trên Cloud MongoDB. Thoải mái dán code mới không bao giờ bị mất key!</p>
+        <h2>⚙️ Quản Lý Key & Người Dùng (MongoDB Cloud)</h2>
+        <p style="color: #4ade80; font-size: 12px;">☁️ Tự động lưu trên Cloud. Có thể chỉnh sửa số giờ sử dụng của người dùng trực tiếp!</p>
         
         <div class="box-create">
-            <label style="font-size: 13px;">Số giờ:</label>
-            <input type="number" id="customHours" value="24" min="1">
+            <label style="font-size: 13px;">Số giờ mặc định:</label>
+            <input type="number" id="customHours" value="24" min="1" style="width:70px;">
             <button class="btn-add" onclick="createCustomKey(false)">➕ Tạo Key Thường</button>
             <button class="btn-vip" onclick="createCustomKey(true)">👑 Tạo Code VIP</button>
         </div>
 
-        <table><tr><th>Mã Key / VIP</th><th>Loại</th><th>Thời Hạn</th><th>Trạng Thái & User</th><th>Thao Tác</th></tr>
+        <table><tr><th>Mã Key</th><th>Loại</th><th>Số Giờ Khả Dụng</th><th>Trạng Thái & User</th><th>Thao Tác</th></tr>
         {% for k, info in keys.items() %}
         <tr>
             <td><code>{{ k }}</code></td>
             <td>{% if info.get('is_vip') %}<b style="color:#eab308">VIP 👑</b>{% else %}<span style="color:#94a3b8">Thường</span>{% endif %}</td>
-            <td><b>{{ info.get('duration_hours', 24) }}h</b></td>
+            <td>
+                <input type="number" class="hours-input" id="hours_{{ loop.index }}" value="{{ info.get('duration_hours', 24) }}" min="1">
+                <button class="btn-save-hours" onclick="updateKeyHours('{{ k }}', 'hours_{{ loop.index }}')">💾 Lưu</button>
+            </td>
             <td>{% if info.status == 'da_dung' %}<span class="status-used">Đã dùng (ID: {{ info.used_by }})</span>{% else %}<span class="status-new">Chưa dùng</span>{% endif %}</td>
             <td>
                 <button class="btn-copy-admin" onclick="copyAdminKey('{{ k }}')">📋 Copy</button>
@@ -290,7 +280,7 @@ def admin_dashboard():
         </tr>
         {% endfor %}</table></div>
     
-    <div id="toast">✨ Đã sao chép mã thành công!</div>
+    <div id="toast">✨ Thao tác thành công!</div>
 
     <script>
     function createCustomKey(isVip) {
@@ -303,7 +293,25 @@ def admin_dashboard():
         .then(res => res.json())
         .then(data => {
             if(data.success) {
-                location.reload();
+                showToast("✨ Tạo Key mới thành công!");
+                setTimeout(() => { location.reload(); }, 1000);
+            } else {
+                alert("Lỗi: " + data.msg);
+            }
+        });
+    }
+
+    function updateKeyHours(key, inputId) {
+        let newHours = document.getElementById(inputId).value;
+        fetch("/admin/update_key_hours", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ key: key, hours: newHours })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.success) {
+                showToast("✅ Đã cập nhật số giờ thành công!");
             } else {
                 alert("Lỗi: " + data.msg);
             }
@@ -312,15 +320,20 @@ def admin_dashboard():
 
     function copyAdminKey(text) {
         navigator.clipboard.writeText(text).then(() => {
-            let toast = document.getElementById("toast");
-            toast.style.display = "block";
-            setTimeout(() => { toast.style.display = "none"; }, 2000);
+            showToast("📋 Đã sao chép mã thành công!");
         });
+    }
+
+    function showToast(msg) {
+        let toast = document.getElementById("toast");
+        toast.innerText = msg;
+        toast.style.display = "block";
+        setTimeout(() => { toast.style.display = "none"; }, 2500);
     }
     </script>
     </body></html>
     """
-    return render_template_string(html, keys=keys_db, now=time.time())
+    return render_template_string(html, keys=keys_db)
 
 @app.route('/admin/create_custom_key', methods=['POST'])
 def admin_create_custom_key():
@@ -344,6 +357,30 @@ def admin_create_custom_key():
         }
         save_key_to_cloud(new_key, key_data)
         return jsonify({"success": True, "key": new_key})
+    except Exception as e:
+        return jsonify({"success": False, "msg": str(e)})
+
+@app.route('/admin/update_key_hours', methods=['POST'])
+def admin_update_key_hours():
+    if not session.get('admin_logged'): 
+        return jsonify({"success": False, "msg": "Chưa đăng nhập!"})
+    try:
+        req_data = request.json or {}
+        key_code = req_data.get("key")
+        new_hours = float(req_data.get("hours", 24))
+        
+        keys_db = load_keys()
+        if key_code in keys_db:
+            k_data = keys_db[key_code]
+            k_data["duration_hours"] = new_hours
+            
+            # Nếu Key đã được người dùng kích hoạt, tính toán lại mốc expire_at mới
+            if k_data["status"] == "da_dung" and k_data.get("created_at"):
+                k_data["expire_at"] = k_data["created_at"] + (new_hours * 3600)
+                
+            save_key_to_cloud(key_code, k_data)
+            return jsonify({"success": True})
+        return jsonify({"success": False, "msg": "Không tìm thấy Key!"})
     except Exception as e:
         return jsonify({"success": False, "msg": str(e)})
 
@@ -480,7 +517,7 @@ def callback_nhap_key_btn(call):
     cfg["waiting_for_key"] = True
     cfg["prompt_msg_id"] = call.message.message_id
     
-    text = "🔑 **Vui lòng nhập mã Key của bạn vào đây**\n*(Ví dụ: `KEY-XW-XXXXXXXX` hoặc `ADMIN-DUNG1612`):*"
+    text = "🔑 **Vui lòng nhập mã Key của bạn vào đây**\n*(Ví dụ: `KEY-XW-XXXXXXXX`):*"
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("⬅️ Quay lại", callback_data="btn_back_start"))
     try: bot.edit_message_text(text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
@@ -672,7 +709,7 @@ def callback_game_actions(call):
                 "• 🛑 Tự dừng khi thua liên tiếp X ván\n"
                 "• 📉 Tự ngắt khi chạm ngưỡng Cắt Lỗ\n"
                 "• 🎯 Tự ngắt khi đạt mục tiêu Chốt Lời\n\n"
-                "👉 **Vui lòng nhập Mã Code VIP để mở khóa (Hoặc dùng `ADMIN-DUNG1612`):**"
+                "👉 **Vui lòng nhập Mã Code VIP để mở khóa:**"
             )
             try: bot.edit_message_text(msg_vip, chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
             except: pass
@@ -979,7 +1016,7 @@ def handle_text_messages(message):
         except: pass
 
 # ---------------------------------------------------------
-# AUTO BOT ENGINES (CƯỢC CHẮC CHẮN - STRICT LOCK - ANTI REPEAT)
+# AUTO BOT ENGINES (STRICT LOCK - DECIMAL PRECISION)
 # ---------------------------------------------------------
 def run_escape_bot_engine(chat_id, uid, skey):
     print(f"🚀 [ESCAPE ENGINE - ANTI REPEAT & DECIMAL] Bắt đầu chạy cho UID: {uid}")
