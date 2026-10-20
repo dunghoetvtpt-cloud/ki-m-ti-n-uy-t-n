@@ -378,12 +378,9 @@ def verify_key_with_server(key_code, user_id):
         return {"status": "error", "msg": "Không thể kết nối máy chủ xác thực key!"}
 
 def check_key_validity(chat_id):
-    """Kiểm tra hạn key - Tự động quét từ Cloud JSONBin nếu RAM bị xóa"""
     cfg = get_user_config(chat_id)
-    
     if cfg["has_valid_key"] and time.time() < cfg.get("key_expire_at", 0):
         return True
-        
     keys_db = load_keys()
     for k, info in keys_db.items():
         if str(info.get("used_by")) == str(chat_id):
@@ -394,7 +391,6 @@ def check_key_validity(chat_id):
                 cfg["is_vip"] = info.get("is_vip", False)
                 session_manager.save_session_to_file(chat_id, expire_at)
                 return True
-                
     cfg["has_valid_key"] = False
     cfg["escape"]["global_running"] = False
     cfg["sprint"]["global_running"] = False
@@ -415,16 +411,10 @@ def send_welcome(message):
     except: pass
     cfg = get_user_config(chat_id)
     reset_user_wait_flags(cfg)
-    
     if not check_key_validity(chat_id):
         cfg["waiting_for_key"] = True
         web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
-        msg_text = (
-            "📜 **XWORLD LICENSE GATEWAY**\n"
-            "───────────────────\n"
-            "⚠️ **Key của bạn đã hết hạn hoặc chưa kích hoạt.**\n\n"
-            "👉 Vui lòng chọn thao tác bên dưới:"
-        )
+        msg_text = "📜 **XWORLD LICENSE GATEWAY**\n───────────────────\n⚠️ **Key của bạn đã hết hạn hoặc chưa kích hoạt.**\n\n👉 Vui lòng chọn thao tác bên dưới:"
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
             types.InlineKeyboardButton("🌐 Tới Trang Lấy Key (24h)", url=web_url),
@@ -443,7 +433,6 @@ def callback_nhap_key_btn(call):
     cfg = get_user_config(chat_id)
     cfg["waiting_for_key"] = True
     cfg["prompt_msg_id"] = call.message.message_id
-    
     text = "🔑 **Vui lòng nhập mã Key của bạn vào đây**\n*(Ví dụ: `KEY-XW-XXXXXXXX` hoặc `ADMIN-XXXXXXXX`):*"
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("⬅️ Quay lại", callback_data="btn_back_start"))
@@ -455,14 +444,8 @@ def callback_back_start(call):
     chat_id = call.message.chat.id
     cfg = get_user_config(chat_id)
     cfg["waiting_for_key"] = False
-    
     web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
-    msg_text = (
-        "📜 **XWORLD LICENSE GATEWAY**\n"
-        "───────────────────\n"
-        "⚠️ **Bạn cần có Key bản quyền để sử dụng bot.**\n\n"
-        "👉 Vui lòng chọn thao tác bên dưới:"
-    )
+    msg_text = "📜 **XWORLD LICENSE GATEWAY**\n───────────────────\n⚠️ **Bạn cần có Key bản quyền để sử dụng bot.**\n\n👉 Vui lòng chọn thao tác bên dưới:"
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
         types.InlineKeyboardButton("🌐 Tới Trang Lấy Key (24h)", url=web_url),
@@ -478,7 +461,6 @@ def show_main_menu(chat_id, message_id, is_new=False):
     h = max(0, remaining_sec // 3600)
     m = max(0, (remaining_sec % 3600) // 60)
     vip_badge = " [VIP 👑]" if cfg.get("is_vip") else ""
-    
     msg_text = f"🎮 *XWORLD BOT*{vip_badge} | Key còn: `{h}h {m}p`\nChọn game:"
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
@@ -499,12 +481,7 @@ def callback_select_game(call):
         cfg["waiting_for_key"] = True
         cfg["prompt_msg_id"] = call.message.message_id
         web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
-        msg_text = (
-            "📜 **XWORLD LICENSE GATEWAY**\n"
-            "───────────────────\n"
-            "⚠️ **Key của bạn đã hết hạn!**\n\n"
-            "👉 Vui lòng chọn thao tác bên dưới:"
-        )
+        msg_text = "📜 **XWORLD LICENSE GATEWAY**\n───────────────────\n⚠️ **Key của bạn đã hết hạn!**\n\n👉 Vui lòng chọn thao tác bên dưới:"
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
             types.InlineKeyboardButton("🌐 Tới Trang Lấy Key (24h)", url=web_url),
@@ -536,7 +513,6 @@ def show_game_menu(chat_id, message_id, game_type):
     rounds_str = f"{rounds_disp} ván" if rounds_disp > 0 else "Vô hạn"
     
     vip_btn_text = "👑 Cấu Hình VIP ✨" if cfg.get("is_vip") else "👑 Tính Năng VIP 🔒"
-    
     remaining_sec = int(cfg.get("key_expire_at", 0) - time.time())
     h = max(0, remaining_sec // 3600)
     m = max(0, (remaining_sec % 3600) // 60)
@@ -577,12 +553,7 @@ def callback_game_actions(call):
         cfg["waiting_for_key"] = True
         cfg["prompt_msg_id"] = call.message.message_id
         web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
-        msg_text = (
-            "📜 **XWORLD LICENSE GATEWAY**\n"
-            "───────────────────\n"
-            "⚠️ **Key của bạn đã hết hạn!**\n\n"
-            "👉 Vui lòng chọn thao tác bên dưới:"
-        )
+        msg_text = "📜 **XWORLD LICENSE GATEWAY**\n───────────────────\n⚠️ **Key của bạn đã hết hạn!**\n\n👉 Vui lòng chọn thao tác bên dưới:"
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
             types.InlineKeyboardButton("🌐 Tới Trang Lấy Key (24h)", url=web_url),
@@ -629,15 +600,7 @@ def callback_game_actions(call):
         if not cfg.get("is_vip"):
             cfg["waiting_for_vip_code"] = True
             cfg["prompt_msg_id"] = call.message.message_id
-            msg_vip = (
-                "👑 **TÍNH NĂNG VIP BỊ KHÓA** 🔒\n"
-                "━━━━━━━━━━━━━━━━━━━\n"
-                "✨ *Tính năng bao gồm:*\n"
-                "• 🛑 Tự dừng khi thua liên tiếp X ván\n"
-                "• 📉 Tự ngắt khi chạm ngưỡng Cắt Lỗ\n"
-                "• 🎯 Tự ngắt khi đạt mục tiêu Chốt Lời\n\n"
-                "👉 **Vui lòng nhập Mã Code VIP để mở khóa:**"
-            )
+            msg_vip = "👑 **TÍNH NĂNG VIP BỊ KHÓA** 🔒\n━━━━━━━━━━━━━━━━━━━\n✨ *Tính năng bao gồm:*\n• 🛑 Tự dừng khi thua liên tiếp X ván\n• 📉 Tự ngắt khi chạm ngưỡng Cắt Lỗ\n• 🎯 Tự ngắt khi đạt mục tiêu Chốt Lời\n\n👉 **Vui lòng nhập Mã Code VIP để mở khóa:**"
             try: bot.edit_message_text(msg_vip, chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
             except: pass
         else:
@@ -681,11 +644,9 @@ def callback_game_actions(call):
         g_cfg["global_running"] = False
         for uid in list(g_cfg["accounts"].keys()):
             get_account_state(game_type, uid)["random_stop"].set()
-        
         g_cfg["accounts"].clear()
         g_cfg["selected_uids"].clear()
-        try:
-            bot.answer_callback_query(call.id, "🗑️ Đã xóa nick thành công!")
+        try: bot.answer_callback_query(call.id, "🗑️ Đã xóa nick thành công!")
         except: pass
         show_game_menu(chat_id, call.message.message_id, game_type)
     elif action == "input_bet":
@@ -719,7 +680,6 @@ def callback_game_actions(call):
             
         if not g_cfg["global_running"]:
             g_cfg["global_running"] = True
-            
             for uid, skey in g_cfg["accounts"].items():
                 st = get_account_state(game_type, uid)
                 st["random_stop"].clear()
@@ -727,7 +687,6 @@ def callback_game_actions(call):
                     Thread(target=run_escape_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
                 elif game_type == "sprint": 
                     Thread(target=run_sprint_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
-                        
             try: bot.answer_callback_query(call.id, "🚀 Đã bật auto thành công!")
             except: pass
         else:
@@ -739,19 +698,14 @@ def callback_game_actions(call):
         show_game_menu(chat_id, call.message.message_id, game_type)
     elif action == "toggle_asset":
         current_asset = g_cfg["asset_type"]
-        if current_asset == "BUILD":
-            g_cfg["asset_type"] = "WORLD"
-        elif current_asset == "WORLD":
-            g_cfg["asset_type"] = "USDT"
-        else:
-            g_cfg["asset_type"] = "BUILD"
+        if current_asset == "BUILD": g_cfg["asset_type"] = "WORLD"
+        elif current_asset == "WORLD": g_cfg["asset_type"] = "USDT"
+        else: g_cfg["asset_type"] = "BUILD"
 
         if game_type == "sprint":
-            if not g_cfg.get("bet_amount_total"):
-                g_cfg["bet_amount_total"] = "1"
+            if not g_cfg.get("bet_amount_total"): g_cfg["bet_amount_total"] = "1"
         else:
-            if not g_cfg.get("base_bet"):
-                g_cfg["base_bet"] = 1.0
+            if not g_cfg.get("base_bet"): g_cfg["base_bet"] = 1.0
 
         try: bot.answer_callback_query(call.id, f"✅ Đã đổi sang {g_cfg['asset_type']}")
         except: pass
@@ -778,7 +732,6 @@ def show_vip_settings_menu(chat_id, message_id, game_type):
     cfg = get_user_config(chat_id)
     g_cfg = cfg[game_type]
     game_name = GAME_NAMES_VI.get(game_type, "Game")
-    
     max_losses = g_cfg.get("max_continuous_losses", 0)
     stop_loss = g_cfg.get("stop_loss_amount", 0.0)
     take_profit = g_cfg.get("take_profit_amount", 0.0)
@@ -787,13 +740,7 @@ def show_vip_settings_menu(chat_id, message_id, game_type):
     stop_loss_str = f"-{stop_loss} {g_cfg['asset_type']}" if stop_loss > 0 else "Tắt"
     take_profit_str = f"+{take_profit} {g_cfg['asset_type']}" if take_profit > 0 else "Tắt"
     
-    msg_text = (
-        f"👑 *CẤU HÌNH QUẢN TRỊ VIP ({game_name.upper()})*\n"
-        "━━━━━━━━━━━━━━━━━━━\n"
-        f"🛑 Dừng khi thua liên tiếp: `{losses_str}`\n"
-        f"📉 Dừng khi Cắt Lỗ: `{stop_loss_str}`\n"
-        f"🎯 Dừng khi Chốt Lời: `{take_profit_str}`\n"
-    )
+    msg_text = f"👑 *CẤU HÌNH QUẢN TRỊ VIP ({game_name.upper()})*\n━━━━━━━━━━━━━━━━━━━\n🛑 Dừng khi thua liên tiếp: `{losses_str}`\n📉 Dừng khi Cắt Lỗ: `{stop_loss_str}`\n🎯 Dừng khi Chốt Lời: `{take_profit_str}`\n"
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
         types.InlineKeyboardButton("🛑 Cài Thua Liên Tiếp", callback_data=f"game_{game_type}_vip_set_max_losses"),
@@ -829,10 +776,8 @@ def handle_text_messages(message):
             val = float(text)
             if val <= 0: raise ValueError()
             g_cfg = cfg[game_target_bet]
-            if game_target_bet == "sprint":
-                g_cfg["bet_amount_total"] = str(val)
-            else: 
-                g_cfg["base_bet"] = val
+            if game_target_bet == "sprint": g_cfg["bet_amount_total"] = str(val)
+            else: g_cfg["base_bet"] = val
             cfg["waiting_for_bet"] = None
             show_game_menu(chat_id, prompt_id, game_target_bet)
             return
@@ -995,12 +940,11 @@ def run_escape_bot_engine(chat_id, uid, skey):
     
     ws_state = {
         "betting_issue_id": None,
-        "current_issue_id": None,
-        "has_bet": False,
-        "countdown_active": False
+        "last_bet_issue": None
     }
 
-    def start_random_rooms(count_down):
+    def start_super_speed_rooms():
+        """Nhảy phòng siêu tốc 0.000001 giây liên tục để giữ kết nối và cày cuốc mượt mà"""
         def api_loop():
             rooms = [1, 2, 3, 4, 5, 6, 7, 8]
             while escape_cfg["global_running"] and not acc_st["random_stop"].is_set():
@@ -1010,21 +954,16 @@ def run_escape_bot_engine(chat_id, uid, skey):
                                      json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(r_id)},
                                      headers=get_headers(), timeout=2)
                 except: pass
-                # Đã giảm thời gian nhảy phòng xuống siêu tốc 0.000001 giây
                 time.sleep(0.000001)
         Thread(target=api_loop, daemon=True).start()
 
     def do_bet(issue_id, count_down):
-        if ws_state["current_issue_id"] != issue_id:
-            ws_state["has_bet"] = False
-            ws_state["betting_issue_id"] = None
-            ws_state["current_issue_id"] = issue_id
-
-        if ws_state["has_bet"]: 
+        # Đảm bảo mỗi issue_id chỉ cược đúng 1 lần duy nhất, không bị lặp hay kẹt
+        if ws_state["last_bet_issue"] == issue_id:
             return
         
+        ws_state["last_bet_issue"] = issue_id
         ws_state["betting_issue_id"] = issue_id
-        ws_state["countdown_active"] = True
         
         room = random.randint(1, 8)
         amount = float(escape_cfg["base_bet"])  # Giữ nguyên mức tiền cược cố định theo base
@@ -1032,51 +971,46 @@ def run_escape_bot_engine(chat_id, uid, skey):
         if enter_room(room):
             time.sleep(0.000001)
             if place_bet(room, amount):
-                ws_state["has_bet"] = True
                 acc_st["total_bets"] += 1
-                start_random_rooms(count_down)
                 
+                # Luồng kiểm tra kết quả ngầm qua API HTTP phòng hờ WebSocket rớt mạng
                 def check_api_backup():
-                    time.sleep(count_down + 5)
-                    if ws_state["betting_issue_id"] == issue_id:
-                        data = get_my_joined(1)
-                        items = data.get("items", [])
-                        for item in items:
-                            if str(item.get("issue_id")) == str(issue_id):
-                                award = float(item.get("award_amount", 0))
-                                bet_amt = float(item.get("bet_amount", 0))
-                                is_killed = not (award > bet_amt)
-                                profit = award - bet_amt
-                                
-                                with data_lock:
-                                    if is_killed:
-                                        acc_st["losses"] += 1
-                                        acc_st["streak_loss"] += 1
-                                        acc_st["total_profit"] -= Decimal(str(bet_amt))
-                                    else:
-                                        acc_st["wins"] += 1
-                                        acc_st["streak_loss"] = 0
-                                        acc_st["total_profit"] += Decimal(str(profit))
-                                # Reset cờ để sang ván mới cược bình thường, không bị kẹt
-                                ws_state["has_bet"] = False
-                                ws_state["betting_issue_id"] = None
-                                return
-                        # Trường hợp không tìm thấy lịch sử, tự động reset trạng thái để ván sau tiếp tục cược
-                        ws_state["has_bet"] = False
-                        ws_state["betting_issue_id"] = None
+                    time.sleep(count_down + 4)
+                    data = get_my_joined(1)
+                    items = data.get("items", [])
+                    for item in items:
+                        if str(item.get("issue_id")) == str(issue_id):
+                            award = float(item.get("award_amount", 0))
+                            bet_amt = float(item.get("bet_amount", 0))
+                            is_killed = not (award > bet_amt)
+                            profit = award - bet_amt
+                            
+                            with data_lock:
+                                if is_killed:
+                                    acc_st["losses"] += 1
+                                    acc_st["streak_loss"] += 1
+                                    acc_st["total_profit"] -= Decimal(str(bet_amt))
+                                else:
+                                    acc_st["wins"] += 1
+                                    acc_st["streak_loss"] = 0
+                                    acc_st["total_profit"] += Decimal(str(profit))
+                            return
                 Thread(target=check_api_backup, daemon=True).start()
 
     def on_message(ws, message):
         try:
             data = json.loads(message)
             msg_type = data.get("msg_type", "")
-            if msg_type == "notify_count_down":
+            
+            # Xử lý tất cả các dạng tín hiệu thông báo ván mới / đếm ngược từ server
+            if msg_type in ["notify_count_down", "notify_game_start", "game_start", "count_down"]:
+                issue_id = data.get("issue_id") or data.get("id")
+                count_down = data.get("count_down", 30)
+                if issue_id:
+                    do_bet(issue_id, count_down)
+            elif msg_type in ["notify_result", "game_result"]:
                 issue_id = data.get("issue_id")
-                count_down = data.get("count_down", 0)
-                do_bet(issue_id, count_down)
-            elif msg_type == "notify_result":
-                issue_id = data.get("issue_id")
-                if issue_id == ws_state["betting_issue_id"]:
+                if issue_id and issue_id == ws_state["betting_issue_id"]:
                     award = float(data.get("award_amount", 0))
                     bet = float(data.get("bet_amount", 0))
                     is_killed = not (award > bet)
@@ -1091,10 +1025,6 @@ def run_escape_bot_engine(chat_id, uid, skey):
                             acc_st["losses"] += 1
                             acc_st["streak_loss"] += 1
                             acc_st["total_profit"] -= Decimal(str(bet))
-                    # Reset cờ an toàn ngay khi có kết quả
-                    ws_state["has_bet"] = False
-                    ws_state["betting_issue_id"] = None
-                    ws_state["current_issue_id"] = None
             elif msg_type == "notify_heartbeat":
                 ws.send(json.dumps({"msg_type": "heartbeat_ack"}))
         except: pass
@@ -1106,6 +1036,8 @@ def run_escape_bot_engine(chat_id, uid, skey):
             "user_id": int(uid),
             "user_secret_key": skey
         }))
+        # Bật ngay luồng nhảy phòng siêu tốc khi kết nối thành công
+        start_super_speed_rooms()
 
     while escape_cfg["global_running"] and not acc_st["random_stop"].is_set():
         if escape_cfg.get("max_continuous_losses", 0) > 0 and acc_st["streak_loss"] >= escape_cfg["max_continuous_losses"]:
@@ -1125,10 +1057,6 @@ def run_escape_bot_engine(chat_id, uid, skey):
 
         if not check_key_validity(chat_id): break
         if escape_cfg.get("max_rounds", 0) > 0 and acc_st["total_bets"] >= escape_cfg["max_rounds"]: break
-        
-        ws_state["has_bet"] = False
-        ws_state["betting_issue_id"] = None
-        ws_state["current_issue_id"] = None
         
         try:
             ws_app = websocket.WebSocketApp(
@@ -1261,7 +1189,7 @@ def run_telebot_polling():
 # ---------------------------------------------------------
 # KHỞI CHẠY ỨNG DỤNG
 # ---------------------------------------------------------
-if __name__ == "__main__":
+If __name__ == "__main__":
     Thread(target=run_telebot_polling, daemon=True).start()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
