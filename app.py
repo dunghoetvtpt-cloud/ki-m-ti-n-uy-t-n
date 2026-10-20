@@ -26,19 +26,28 @@ ADMIN_PASSWORD = "dung1612012"
 LINK4M_API_TOKEN = "68a76c1354de3f0da567ca17"
 
 # ---------------------------------------------------------
-# ☁️ KẾT NỐI MONGODB CLOUD (SỬA LỖI ĐỒNG BỘ HIỂN THỊ KEY)
+# ☁️ KẾT NỐI MONGODB CLOUD (CÓ LOG KIỂM TRA CHI TIẾT)
 # ---------------------------------------------------------
 MONGO_URI = os.environ.get("MONGO_URI", "")
-client = MongoClient(MONGO_URI) if MONGO_URI else None
-db = client["xworld_db"] if client else None
-keys_collection = db["user_keys"] if db is not None else None
+print(f"📌 Đang kết nối MongoDB với URI: {MONGO_URI[:30]}...")
+
+try:
+    client = MongoClient(MONGO_URI) if MONGO_URI else None
+    db = client["xworld_db"] if client else None
+    keys_collection = db["user_keys"] if db is not None else None
+    print("✅ Kết nối MongoDB thành công!")
+except Exception as e:
+    print(f"❌ Lỗi kết nối MongoDB: {e}")
+    client, db, keys_collection = None, None, None
 
 def load_keys():
-    """Lấy danh sách Key từ MongoDB Cloud một cách an toàn nhất"""
+    """Lấy danh sách Key từ MongoDB Cloud"""
     keys_data = {}
     if keys_collection is not None:
         try:
-            for doc in keys_collection.find():
+            docs = list(keys_collection.find())
+            print(f"📥 Đã tải {len(docs)} key từ MongoDB.")
+            for doc in docs:
                 k_code = doc.get("key_code") or doc.get("_id")
                 if k_code:
                     keys_data[str(k_code)] = {
@@ -50,8 +59,9 @@ def load_keys():
                         "is_vip": doc.get("is_vip", False)
                     }
         except Exception as e:
-            print(f"❌ Lỗi đọc MongoDB: {e}")
-
+            print(f"❌ Lỗi đọc MongoDB load_keys: {e}")
+    else:
+        print("⚠️ keys_collection đang là None!")
     return keys_data
 
 def save_key_to_cloud(key_code, data):
@@ -71,14 +81,18 @@ def save_key_to_cloud(key_code, data):
                 }},
                 upsert=True
             )
+            print(f"💾 Đã lưu key {key_code} lên MongoDB thành công!")
         except Exception as e:
-            print(f"❌ Lỗi ghi MongoDB: {e}")
+            print(f"❌ Lỗi ghi MongoDB save_key: {e}")
+    else:
+        print("⚠️ Không thể lưu vì keys_collection là None!")
 
 def delete_key_from_cloud(key_code):
     """Xóa Key khỏi MongoDB Cloud"""
     if keys_collection is not None:
         try:
             keys_collection.delete_one({"key_code": key_code})
+            print(f"🗑️ Đã xóa key {key_code} khỏi MongoDB.")
         except Exception as e:
             print(f"❌ Lỗi xóa MongoDB: {e}")
 
