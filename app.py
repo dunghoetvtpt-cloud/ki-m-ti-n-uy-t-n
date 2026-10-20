@@ -25,7 +25,7 @@ ADMIN_PASSWORD = "dung1612012"
 LINK4M_API_TOKEN = "68a76c1354de3f0da567ca17"
 
 # ---------------------------------------------------------
-# 🗄️ KẾT NỐI JSONBIN.IO (LUÔN ĐỒNG BỘ DỮ LIỆU)
+# 🗄️ KẾT NỐI JSONBIN.IO (LUÔN ĐỒNG BỘ DỮ LIỆU KEY)
 # ---------------------------------------------------------
 JSONBIN_BIN_ID = os.environ.get("JSONBIN_BIN_ID", "")
 JSONBIN_API_KEY = os.environ.get("JSONBIN_API_KEY", "")
