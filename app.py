@@ -886,7 +886,7 @@ def handle_text_messages(message):
         except: pass
 
 def run_escape_bot_engine(chat_id, uid, skey):
-    print(f"DEBUG: Bắt đầu khởi động engine Vua Thoát Hiểm cho UID: {uid}")
+    print(f"🚀 [ESCAPE ENGINE] Bắt đầu khởi chạy cho User ID: {uid}")
     cfg = get_user_config(chat_id)
     escape_cfg = cfg["escape"]
     acc_st = get_account_state("escape", uid)
@@ -896,7 +896,6 @@ def run_escape_bot_engine(chat_id, uid, skey):
         "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Mobile Safari/537.36",
         "Origin": "https://escapemaster.net",
         "Accept": "application/json",
-        "Accept-Language": "vi-VN,vi;q=0.9",
         "Referer": f"https://escapemaster.net/battleroyale/?userId={uid}&secretKey={skey}&language=vi-VN",
     })
 
@@ -905,7 +904,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
             "Content-Type": "application/json",
             "User-Id": str(uid),
             "User-Login": "login_v2",
-            "User-Secret-Key": skey,
+            "User-Secret-Key": str(skey),
             "Accept": "application/json"
         }
 
@@ -914,10 +913,11 @@ def run_escape_bot_engine(chat_id, uid, skey):
             resp = session_req.post("https://api.escapemaster.net/escape_game/enter_room",
                                     json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id)},
                                     headers=get_headers(), timeout=5)
-            print(f"DEBUG enter_room resp: {resp.status_code} - {resp.text}")
-            return resp.status_code == 200 and resp.json().get("code") == 0
+            res_j = resp.json() if resp.status_code == 200 else {}
+            print(f"👉 Enter Room {room_id}: {res_j}")
+            return res_j.get("code") == 0
         except Exception as e:
-            print(f"DEBUG enter_room exception: {e}")
+            print(f"❌ Lỗi enter_room: {e}")
             return False
 
     def place_bet(room_id, amount):
@@ -925,35 +925,22 @@ def run_escape_bot_engine(chat_id, uid, skey):
             resp = session_req.post("https://api.escapemaster.net/escape_game/bet",
                                     json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id), "bet_amount": float(amount)},
                                     headers=get_headers(), timeout=5)
-            print(f"DEBUG place_bet resp: {resp.status_code} - {resp.text}")
-            return resp.status_code == 200 and resp.json().get("code") == 0
+            res_j = resp.json() if resp.status_code == 200 else {}
+            print(f"🎲 Bet Result Room {room_id} ({amount}): {res_j}")
+            return res_j.get("code") == 0
         except Exception as e:
-            print(f"DEBUG place_bet exception: {e}")
+            print(f"❌ Lỗi place_bet: {e}")
             return False
-
-    def get_game_home():
-        try:
-            resp = session_req.get("https://api.escapemaster.net/escape_game/home",
-                                   params={"asset_type": escape_cfg["asset_type"]},
-                                   headers=get_headers(), timeout=5)
-            print(f"DEBUG get_game_home resp: {resp.status_code} - {resp.text}")
-            if resp.status_code == 200:
-                return resp.json().get("data", {})
-        except Exception as e:
-            print(f"DEBUG get_game_home exception: {e}")
-        return {}
 
     def get_my_joined(page=1):
         try:
             resp = session_req.get("https://api.escapemaster.net/escape_game/my_joined",
                                    params={"asset": escape_cfg["asset_type"], "page": page, "page_size": 10},
-                                   headers=get_headers(), timeout=10)
+                                   headers=get_headers(), timeout=5)
             if resp.status_code == 200:
                 return resp.json().get("data", {})
         except: pass
         return {}
-
-    last_bet_issue = None
 
     while escape_cfg["global_running"] and not acc_st["random_stop"].is_set():
         if escape_cfg.get("max_continuous_losses", 0) > 0 and acc_st["streak_loss"] >= escape_cfg["max_continuous_losses"]:
@@ -963,73 +950,60 @@ def run_escape_bot_engine(chat_id, uid, skey):
 
         if escape_cfg.get("stop_loss_amount", 0.0) > 0 and acc_st["total_profit"] <= -Decimal(str(escape_cfg["stop_loss_amount"])):
             escape_cfg["global_running"] = False
-            bot.send_message(chat_id, f"📉 **VIP Auto Stop:** Đã chạm ngưỡng Cắt Lỗ ({acc_st['total_profit']} {escape_cfg['asset_type']})!", parse_mode="Markdown")
+            bot.send_message(chat_id, f"📉 **VIP Auto Stop:** Cắt Lỗ ({acc_st['total_profit']} {escape_cfg['asset_type']})!", parse_mode="Markdown")
             break
 
         if escape_cfg.get("take_profit_amount", 0.0) > 0 and acc_st["total_profit"] >= Decimal(str(escape_cfg["take_profit_amount"])):
             escape_cfg["global_running"] = False
-            bot.send_message(chat_id, f"🎯 **VIP Auto Stop:** Đã đạt mục tiêu Chốt Lời (+{acc_st['total_profit']} {escape_cfg['asset_type']})!", parse_mode="Markdown")
+            bot.send_message(chat_id, f"🎯 **VIP Auto Stop:** Chốt Lời (+{acc_st['total_profit']} {escape_cfg['asset_type']})!", parse_mode="Markdown")
             break
 
         if not check_key_validity(chat_id): break
         if escape_cfg.get("max_rounds", 0) > 0 and acc_st["total_bets"] >= escape_cfg["max_rounds"]: break
 
         try:
-            home_data = get_game_home()
-            issue_id = str(home_data.get("issue_id") or home_data.get("current_issue") or "")
-            count_down = home_data.get("count_down", 0) or home_data.get("countdown", 0)
-            print(f"DEBUG Home Data -> issue_id: {issue_id}, count_down: {count_down}")
+            room = random.randint(1, 8)
+            amount = float(escape_cfg["base_bet"])
 
-            if issue_id and issue_id != last_bet_issue and count_down > 3:
-                last_bet_issue = issue_id
-                room = random.randint(1, 8)
-                amount = float(escape_cfg["base_bet"])
-
-                if enter_room(room):
-                    time.sleep(0.3)
-                    if place_bet(room, amount):
-                        acc_st["total_bets"] += 1
+            print(f"🔄 Đang tiến hành thử cược ván mới ở Phòng {room}...")
+            
+            if enter_room(room):
+                time.sleep(0.2)
+                if place_bet(room, amount):
+                    acc_st["total_bets"] += 1
+                    print(f"✅ ĐÃ ĐẶT CƯỢC THÀNH CÔNG VÁN THỨ {acc_st['total_bets']}!")
+                    
+                    time.sleep(40)
+                    
+                    history_data = get_my_joined(1)
+                    items = history_data.get("items", [])
+                    if items:
+                        item = items[0]
+                        award = float(item.get("award_amount", 0))
+                        bet_amt = float(item.get("bet_amount", 0))
+                        is_killed = not (award > bet_amt)
+                        profit = award - bet_amt
                         
-                        def random_rooms_loop():
-                            for _ in range(int(count_down) - 2):
-                                if not escape_cfg["global_running"]: break
-                                try:
-                                    session_req.post("https://api.escapemaster.net/escape_game/enter_room",
-                                                     json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": random.randint(1, 8)},
-                                                     headers=get_headers(), timeout=2)
-                                except: pass
-                                time.sleep(0.3)
-                        Thread(target=random_rooms_loop, daemon=True).start()
-
-                        def check_result_loop():
-                            time.sleep(count_down + 3)
-                            for _ in range(5):
-                                history_data = get_my_joined(1)
-                                items = history_data.get("items", [])
-                                matched = [it for it in items if str(it.get("issue_id")) == str(issue_id)]
-                                if matched:
-                                    item = matched[0]
-                                    award = float(item.get("award_amount", 0))
-                                    bet_amt = float(item.get("bet_amount", 0))
-                                    is_killed = not (award > bet_amt)
-                                    profit = award - bet_amt
-                                    
-                                    with data_lock:
-                                        if is_killed:
-                                            acc_st["losses"] += 1
-                                            acc_st["streak_loss"] += 1
-                                            acc_st["total_profit"] -= Decimal(str(bet_amt))
-                                        else:
-                                            acc_st["wins"] += 1
-                                            acc_st["streak_loss"] = 0
-                                            acc_st["total_profit"] += Decimal(str(profit))
-                                    break
-                                time.sleep(2)
-                        Thread(target=check_result_loop, daemon=True).start()
+                        with data_lock:
+                            if is_killed:
+                                acc_st["losses"] += 1
+                                acc_st["streak_loss"] += 1
+                                acc_st["total_profit"] -= Decimal(str(bet_amt))
+                                print(f"🔴 Ván này THUA: -{bet_amt}")
+                            else:
+                                acc_st["wins"] += 1
+                                acc_st["streak_loss"] = 0
+                                acc_st["total_profit"] += Decimal(str(profit))
+                                print(f"🟢 Ván này THẮNG: +{profit}")
+                else:
+                    print("⚠️ Không thể đặt cược (Có thể do đã hết thời gian cược ván này hoặc không đủ số dư).")
+            else:
+                print("⚠️ Không thể vào phòng (Server bận).")
 
         except Exception as e:
-            print(f"DEBUG Lỗi trong vòng lặp chính escape engine: {e}")
-        time.sleep(1.5)
+            print(f"💥 Lỗi Engine: {e}")
+
+        time.sleep(3)
 
 def run_sprint_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)
@@ -1144,7 +1118,7 @@ def run_telebot_polling():
     while True:
         try:
             bot.remove_webhook()
-            time.sleep(1>0)
+            time.sleep(1)
             bot.infinity_polling(timeout=10, long_polling_timeout=5, skip_pending=True)
         except:
             time.sleep(5)
