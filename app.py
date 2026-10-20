@@ -34,7 +34,7 @@ print(f"📌 Đang kết nối MongoDB với URI: {MONGO_URI[:30]}...")
 try:
     client = MongoClient(MONGO_URI) if MONGO_URI else None
     db = client["xworld_db"] if client else None
-    keys_collection = db["user_keys"] if db is not None else None
+    keys_collection = db["dunghoet"] if db is not None else None
     print("✅ Kết nối MongoDB thành công!")
 except Exception as e:
     print(f"❌ Lỗi kết nối MongoDB: {e}")
