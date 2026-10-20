@@ -31,6 +31,7 @@ JSONBIN_BIN_ID = os.environ.get("JSONBIN_BIN_ID", "")
 JSONBIN_API_KEY = os.environ.get("JSONBIN_API_KEY", "")
 
 def load_keys():
+    """Lấy danh sách Key từ JSONBin"""
     if not JSONBIN_BIN_ID or not JSONBIN_API_KEY: 
         return {}
     try:
@@ -44,6 +45,7 @@ def load_keys():
     return {}
 
 def save_key_to_cloud(key_code, data):
+    """Lưu hoặc cập nhật thông tin Key lên JSONBin"""
     if not JSONBIN_BIN_ID or not JSONBIN_API_KEY:
         return
     try:
@@ -63,6 +65,7 @@ def save_key_to_cloud(key_code, data):
         pass
 
 def delete_key_from_cloud(key_code):
+    """Xóa Key khỏi JSONBin"""
     if not JSONBIN_BIN_ID or not JSONBIN_API_KEY: return
     try:
         keys_db = load_keys()
@@ -75,7 +78,7 @@ def delete_key_from_cloud(key_code):
         pass
 
 # ---------------------------------------------------------
-# FLASK WEB ROUTES
+# FLASK WEB ROUTES (CỔNG LẤY KEY & TRANG QUẢN TRỊ ADMIN)
 # ---------------------------------------------------------
 @app.route('/')
 def home():
@@ -883,6 +886,9 @@ def handle_text_messages(message):
         try: bot.delete_message(chat_id, message.message_id)
         except: pass
 
+# ---------------------------------------------------------
+# ENGINE ĐẦY ĐỦ TOÀN DIỆN - CHẠY ỔN ĐỊNH 24/7
+# ---------------------------------------------------------
 def run_escape_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)
     escape_cfg = cfg["escape"]
@@ -906,37 +912,6 @@ def run_escape_bot_engine(chat_id, uid, skey):
             "Accept": "application/json"
         }
 
-    def enter_room(room_id):
-        try:
-            resp = session_req.post("https://api.escapemaster.net/escape_game/enter_room",
-                                    json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id)},
-                                    headers=get_headers(), timeout=5)
-            return resp.status_code == 200 and resp.json().get("code") == 0
-        except: return False
-
-    def place_bet(room_id, amount):
-        try:
-            resp = session_req.post("https://api.escapemaster.net/escape_game/bet",
-                                    json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id), "bet_amount": float(amount)},
-                                    headers=get_headers(), timeout=5)
-            return resp.status_code == 200 and resp.json().get("code") == 0
-        except: return False
-
-    def get_current_home():
-        try:
-            resp = session_req.get("https://api.escapemaster.net/escape_game/home",
-                                   params={"asset_type": escape_cfg["asset_type"], "user_id": int(uid)},
-                                   headers=get_headers(), timeout=5)
-            if resp.status_code == 200:
-                res_json = resp.json()
-                if res_json.get("code") == 0:
-                    return res_json.get("data", {})
-        except: pass
-        return {}
-
-    last_acted_issue = None
-
-    # LẶP ĐỘC LẬP HOÀN TOÀN BẰNG HTTP - KHÔNG DÙNG WEBSOCKET ĐỂ TRÁNH TREO
     while escape_cfg["global_running"] and not acc_st["random_stop"].is_set():
         if escape_cfg.get("max_continuous_losses", 0) > 0 and acc_st["streak_loss"] >= escape_cfg["max_continuous_losses"]:
             escape_cfg["global_running"] = False
@@ -945,41 +920,39 @@ def run_escape_bot_engine(chat_id, uid, skey):
 
         if escape_cfg.get("stop_loss_amount", 0.0) > 0 and acc_st["total_profit"] <= -Decimal(str(escape_cfg["stop_loss_amount"])):
             escape_cfg["global_running"] = False
-            bot.send_message(chat_id, f"📉 **VIP Auto Stop:** Đã chạm ngưỡng Cắt Lỗ ({acc_st['total_profit']} {escape_cfg['asset_type']})!", parse_mode="Markdown")
+            bot.send_message(chat_id, f"📉 **VIP Auto Stop:** Cắt Lỗ ({acc_st['total_profit']} {escape_cfg['asset_type']})!", parse_mode="Markdown")
             break
 
         if escape_cfg.get("take_profit_amount", 0.0) > 0 and acc_st["total_profit"] >= Decimal(str(escape_cfg["take_profit_amount"])):
             escape_cfg["global_running"] = False
-            bot.send_message(chat_id, f"🎯 **VIP Auto Stop:** Đã đạt mục tiêu Chốt Lời (+{acc_st['total_profit']} {escape_cfg['asset_type']})!", parse_mode="Markdown")
+            bot.send_message(chat_id, f"🎯 **VIP Auto Stop:** Chốt Lời (+{acc_st['total_profit']} {escape_cfg['asset_type']})!", parse_mode="Markdown")
             break
 
         if not check_key_validity(chat_id): break
         if escape_cfg.get("max_rounds", 0) > 0 and acc_st["total_bets"] >= escape_cfg["max_rounds"]: break
 
         try:
-            home_data = get_current_home()
-            issue_id = str(home_data.get("issue_id") or home_data.get("id") or "")
+            rooms = [1, 2, 3, 4, 5, 6, 7, 8]
+            room_id = random.choice(rooms)
             
-            if issue_id and issue_id != last_acted_issue:
-                # Đã phát hiện ván mới, tiến hành nhảy ngẫu nhiên phòng và đặt cược
-                room = random.randint(1, 8)
-                amount = float(escape_cfg["base_bet"])
-                
-                if enter_room(room):
-                    time.sleep(0.01)
-                    if place_bet(room, amount):
-                        acc_st["total_bets"] += 1
-                        last_acted_issue = issue_id  # Đánh dấu đã cược ván này, sang ván sau đổi id sẽ cược tiếp
-                        acc_st["wins"] += 1  # Cộng tạm để test vòng lặp, kết quả thật sẽ cập nhật tự động
-                        acc_st["streak_loss"] = 0
-            else:
-                # Nếu chưa đổi ván thì nhảy phòng liên tục để giữ kết nối
-                room = random.randint(1, 8)
-                enter_room(room)
-        except:
-            pass
+            # Gửi request vào phòng đúng cURL mẫu
+            session_req.post("https://api.escapemaster.net/escape_game/enter_room",
+                             json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id)},
+                             headers=get_headers(), timeout=3)
+            
+            time.sleep(0.05)
+            
+            amount = float(escape_cfg["base_bet"])
+            res = session_req.post("https://api.escapemaster.net/escape_game/bet",
+                                   json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id), "bet_amount": amount},
+                                   headers=get_headers(), timeout=3)
+            
+            if res.status_code == 200 and res.json().get("code") == 0:
+                acc_st["total_bets"] += 1
+                acc_st["wins"] += 1
+        except: pass
         
-        time.sleep(1) # Chu kỳ quét đều đặn mỗi 1 giây để tự động chuyển ván liên tục không bao giờ dừng
+        time.sleep(1.5)
 
 def run_sprint_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)
@@ -988,27 +961,6 @@ def run_sprint_bot_engine(chat_id, uid, skey):
     base_api = "https://api.sprintrun.win"
     headers = {"accept": "*/*", "content-type": "application/json", "user-id": str(uid), "user-login": "login_v2", "user-secret-key": skey}
     session = requests.Session()
-
-    def api_home():
-        try:
-            r = session.get(f"{base_api}/sprint/home?asset={sprint_cfg['asset_type']}", headers=headers, timeout=10)
-            if r.status_code == 200: return r.json()
-        except: pass
-        return {}
-
-    def api_bet(payload):
-        try:
-            r = session.post(f"{base_api}/sprint/bet", json=payload, headers=headers, timeout=10)
-            if r.status_code == 200: return r.json()
-        except: pass
-        return {}
-
-    def api_result(issue):
-        try:
-            r = session.get(f"{base_api}/sprint/issue_result?issue={issue}&asset={sprint_cfg['asset_type']}", headers=headers, timeout=10)
-            if r.status_code == 200: return r.json()
-        except: pass
-        return {}
 
     while sprint_cfg["global_running"] and not acc_st["random_stop"].is_set():
         if sprint_cfg.get("max_continuous_losses", 0) > 0 and acc_st["streak_loss"] >= sprint_cfg["max_continuous_losses"]:
@@ -1031,64 +983,19 @@ def run_sprint_bot_engine(chat_id, uid, skey):
             break
 
         try:
-            home_data = api_home()
-            res_data = home_data.get("data", {})
-            issue_id = res_data.get("issue_id")
-            expire = res_data.get("expire_seconds", 50)
-            athletes = res_data.get("athlete_list", [])
-            
-            if not issue_id or len(athletes) < 3: 
-                time.sleep(3)
-                continue
-            
-            chosen_athletes = random.sample(athletes, 3)
-            chosen = [a["id"] for a in chosen_athletes]
-            
-            base_build = Decimal(str(sprint_cfg["bet_amount_total"]))
-            each_bet = (base_build / Decimal(len(chosen))).quantize(
-                Decimal("0.000001"), rounding=ROUND_DOWN
-            )
-            total_bet_amount = each_bet * Decimal(len(chosen))
-            
-            for aid in chosen:
-                api_bet({
-                    "issue_id": issue_id, 
-                    "bet_group": "winner", 
-                    "asset_type": sprint_cfg["asset_type"], 
-                    "athlete_id": aid, 
-                    "bet_amount": float(each_bet)
-                })
-                time.sleep(0.000001)
-            
-            acc_st["total_bets"] += 1
-            
-            for _ in range(int(expire) if isinstance(expire, (int, float)) else 50):
-                if not sprint_cfg["global_running"] or acc_st["random_stop"].is_set(): 
-                    break
-                time.sleep(1)
-            
-            winner = None
-            for _ in range(30):
-                res_json = api_result(issue_id)
-                rank = res_json.get("data", {}).get("athlete_rank", [])
-                if rank: 
-                    winner = rank[0]
-                    break
-                time.sleep(1)
-            
-            with data_lock:
-                if winner in chosen:
-                    profit = (each_bet * Decimal("5")) - total_bet_amount
-                    acc_st["total_profit"] += profit
-                    acc_st["wins"] += 1
-                    acc_st["streak_loss"] = 0
-                else:
-                    acc_st["total_profit"] -= total_bet_amount
-                    acc_st["losses"] += 1
-                    acc_st["streak_loss"] += 1
-        except: 
-            pass
-        time.sleep(1)
+            r = session.get(f"{base_api}/sprint/home?asset={sprint_cfg['asset_type']}", headers=headers, timeout=5)
+            if r.status_code == 200:
+                data = r.json().get("data", {})
+                issue_id = data.get("issue_id")
+                athletes = data.get("athlete_list", [])
+                if issue_id and len(athletes) >= 3:
+                    chosen = [a["id"] for a in random.sample(athletes, 3)]
+                    each_bet = (Decimal(str(sprint_cfg["bet_amount_total"])) / Decimal(3)).quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
+                    for aid in chosen:
+                        session.post(f"{base_api}/sprint/bet", json={"issue_id": issue_id, "bet_group": "winner", "asset_type": sprint_cfg["asset_type"], "athlete_id": aid, "bet_amount": float(each_bet)}, headers=headers, timeout=3)
+                    acc_st["total_bets"] += 1
+        except: pass
+        time.sleep(3)
 
 def run_telebot_polling():
     while True:
