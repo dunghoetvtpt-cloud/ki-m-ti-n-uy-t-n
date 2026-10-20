@@ -936,115 +936,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
         return {}
 
     ws_url = "wss://api.escapemaster.net/escape_master/ws"
-    
-    ws_state = {
-        "betting_issue_id": None,
-        "current_issue_id": None,
-        "has_bet": False,
-        "countdown_active": False,
-        "need_restart": False
-    }
-
-    def start_random_rooms(count_down):
-        def api_loop():
-            rooms = [1, 2, 3, 4, 5, 6, 7, 8]
-            while escape_cfg["global_running"] and not acc_st["random_stop"].is_set():
-                r_id = random.choice(rooms)
-                try:
-                    session_req.post("https://api.escapemaster.net/escape_game/enter_room",
-                                     json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(r_id)},
-                                     headers=get_headers(), timeout=2)
-                except: pass
-                time.sleep(0.2)
-        Thread(target=api_loop, daemon=True).start()
-
-    def do_bet(issue_id, count_down):
-        if ws_state["current_issue_id"] != issue_id:
-            ws_state["has_bet"] = False
-            ws_state["betting_issue_id"] = None
-            ws_state["current_issue_id"] = issue_id
-
-        if ws_state["has_bet"]: 
-            return
-        
-        ws_state["betting_issue_id"] = issue_id
-        ws_state["countdown_active"] = True
-        
-        room = random.randint(1, 8)
-        amount = float(escape_cfg["base_bet"])  # Cố định tiền cược, không nhân hệ số
-        
-        if enter_room(room):
-            time.sleep(0.3)
-            if place_bet(room, amount):
-                ws_state["has_bet"] = True
-                acc_st["total_bets"] += 1
-                start_random_rooms(count_down)
-                
-                def check_api_backup():
-                    time.sleep(count_down + 5)
-                    if ws_state["has_bet"] and ws_state["betting_issue_id"] == issue_id:
-                        data = get_my_joined(1)
-                        items = data.get("items", [])
-                        for item in items:
-                            if str(item.get("issue_id")) == str(issue_id):
-                                award = float(item.get("award_amount", 0))
-                                bet_amt = float(item.get("bet_amount", 0))
-                                is_killed = not (award > bet_amt)
-                                profit = award - bet_amt
-                                
-                                with data_lock:
-                                    if is_killed:
-                                        acc_st["losses"] += 1
-                                        acc_st["streak_loss"] += 1
-                                        acc_st["total_profit"] -= Decimal(str(bet_amt))
-                                    else:
-                                        acc_st["wins"] += 1
-                                        acc_st["streak_loss"] = 0
-                                        acc_st["total_profit"] += Decimal(str(profit))
-                                ws_state["has_bet"] = False
-                                ws_state["betting_issue_id"] = None
-                                return
-                Thread(target=check_api_backup, daemon=True).start()
-
-    def on_message(ws, message):
-        try:
-            data = json.loads(message)
-            msg_type = data.get("msg_type", "")
-            if msg_type == "notify_count_down":
-                issue_id = data.get("issue_id")
-                count_down = data.get("count_down", 0)
-                do_bet(issue_id, count_down)
-            elif msg_type == "notify_result":
-                issue_id = data.get("issue_id")
-                if ws_state["has_bet"] and issue_id == ws_state["betting_issue_id"]:
-                    award = float(data.get("award_amount", 0))
-                    bet = float(data.get("bet_amount", 0))
-                    is_killed = not (award > bet)
-                    profit = award - bet
-                    
-                    with data_lock:
-                        if not is_killed:
-                            acc_st["wins"] += 1
-                            acc_st["streak_loss"] = 0
-                            acc_st["total_profit"] += Decimal(str(profit))
-                        else:
-                            acc_st["losses"] += 1
-                            acc_st["streak_loss"] += 1
-                            acc_st["total_profit"] -= Decimal(str(bet))
-                    ws_state["has_bet"] = False
-                    ws_state["betting_issue_id"] = None
-                    ws_state["current_issue_id"] = None
-            elif msg_type == "notify_heartbeat":
-                ws.send(json.dumps({"msg_type": "heartbeat_ack"}))
-        except: pass
-
-    def on_open(ws):
-        ws.send(json.dumps({
-            "msg_type": "handle_enter_game",
-            "asset_type": escape_cfg["asset_type"],
-            "user_id": int(uid),
-            "user_secret_key": skey
-        }))
+    last_bet_issue = None
 
     while escape_cfg["global_running"] and not acc_st["random_stop"].is_set():
         if escape_cfg.get("max_continuous_losses", 0) > 0 and acc_st["streak_loss"] >= escape_cfg["max_continuous_losses"]:
@@ -1064,11 +956,73 @@ def run_escape_bot_engine(chat_id, uid, skey):
 
         if not check_key_validity(chat_id): break
         if escape_cfg.get("max_rounds", 0) > 0 and acc_st["total_bets"] >= escape_cfg["max_rounds"]: break
-        
-        ws_state["has_bet"] = False
-        ws_state["betting_issue_id"] = None
-        ws_state["current_issue_id"] = None
-        
+
+        def on_message(ws, message):
+            nonlocal last_bet_issue
+            try:
+                data = json.loads(message)
+                msg_type = data.get("msg_type", "")
+                
+                if msg_type == "notify_count_down":
+                    issue_id = data.get("issue_id")
+                    count_down = data.get("count_down", 0)
+                    
+                    if issue_id and issue_id != last_bet_issue and count_down > 5:
+                        last_bet_issue = issue_id
+                        room = random.randint(1, 8)
+                        amount = float(escape_cfg["base_bet"])
+                        
+                        if enter_room(room):
+                            time.sleep(0.3)
+                            if place_bet(room, amount):
+                                acc_st["total_bets"] += 1
+                                
+                                def random_rooms_loop():
+                                    for _ in range(int(count_down) - 2):
+                                        if not escape_cfg["global_running"]: break
+                                        try:
+                                            session_req.post("https://api.escapemaster.net/escape_game/enter_room",
+                                                             json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": random.randint(1, 8)},
+                                                             headers=get_headers(), timeout=2)
+                                        except: pass
+                                        time.sleep(0.2)
+                                Thread(target=random_rooms_loop, daemon=True).start()
+                                
+                                def check_result():
+                                    time.sleep(count_down + 4)
+                                    history_data = get_my_joined(1)
+                                    items = history_data.get("items", [])
+                                    for item in items:
+                                        if str(item.get("issue_id")) == str(issue_id):
+                                            award = float(item.get("award_amount", 0))
+                                            bet_amt = float(item.get("bet_amount", 0))
+                                            is_killed = not (award > bet_amt)
+                                            profit = award - bet_amt
+                                            
+                                            with data_lock:
+                                                if is_killed:
+                                                    acc_st["losses"] += 1
+                                                    acc_st["streak_loss"] += 1
+                                                    acc_st["total_profit"] -= Decimal(str(bet_amt))
+                                                else:
+                                                    acc_st["wins"] += 1
+                                                    acc_st["streak_loss"] = 0
+                                                    acc_st["total_profit"] += Decimal(str(profit))
+                                            break
+                                Thread(target=check_result, daemon=True).start()
+                
+                elif msg_type == "notify_heartbeat":
+                    ws.send(json.dumps({"msg_type": "heartbeat_ack"}))
+            except: pass
+
+        def on_open(ws):
+            ws.send(json.dumps({
+                "msg_type": "handle_enter_game",
+                "asset_type": escape_cfg["asset_type"],
+                "user_id": int(uid),
+                "user_secret_key": skey
+            }))
+
         try:
             ws_app = websocket.WebSocketApp(
                 ws_url,
@@ -1077,7 +1031,8 @@ def run_escape_bot_engine(chat_id, uid, skey):
             )
             ws_app.run_forever(ping_interval=15, ping_timeout=10)
         except: pass
-        time.sleep(2)
+        
+        time.sleep(1)
 
 def run_sprint_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)
@@ -1142,7 +1097,6 @@ def run_sprint_bot_engine(chat_id, uid, skey):
             chosen_athletes = random.sample(athletes, 3)
             chosen = [a["id"] for a in chosen_athletes]
             
-            # Cố định tiền cược theo base, không nhân hệ số
             base_build = Decimal(str(sprint_cfg["bet_amount_total"]))
             each_bet = (base_build / Decimal(len(chosen))).quantize(
                 Decimal("0.000001"), rounding=ROUND_DOWN
