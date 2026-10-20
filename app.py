@@ -943,25 +943,9 @@ def run_escape_bot_engine(chat_id, uid, skey):
         "last_bet_issue": None
     }
 
-    def start_super_speed_rooms():
-        """Nhảy phòng siêu tốc 0.000001 giây liên tục để giữ kết nối và cày cuốc mượt mà"""
-        def api_loop():
-            rooms = [1, 2, 3, 4, 5, 6, 7, 8]
-            while escape_cfg["global_running"] and not acc_st["random_stop"].is_set():
-                r_id = random.choice(rooms)
-                try:
-                    session_req.post("https://api.escapemaster.net/escape_game/enter_room",
-                                     json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(r_id)},
-                                     headers=get_headers(), timeout=2)
-                except: pass
-                time.sleep(0.000001)
-        Thread(target=api_loop, daemon=True).start()
-
-    def do_bet(issue_id, count_down):
-        # Đảm bảo mỗi issue_id chỉ cược đúng 1 lần duy nhất, không bị lặp hay kẹt
+    def execute_bet_action(issue_id):
         if ws_state["last_bet_issue"] == issue_id:
             return
-        
         ws_state["last_bet_issue"] = issue_id
         ws_state["betting_issue_id"] = issue_id
         
@@ -973,9 +957,8 @@ def run_escape_bot_engine(chat_id, uid, skey):
             if place_bet(room, amount):
                 acc_st["total_bets"] += 1
                 
-                # Luồng kiểm tra kết quả ngầm qua API HTTP phòng hờ WebSocket rớt mạng
                 def check_api_backup():
-                    time.sleep(count_down + 4)
+                    time.sleep(15)
                     data = get_my_joined(1)
                     items = data.get("items", [])
                     for item in items:
@@ -997,19 +980,41 @@ def run_escape_bot_engine(chat_id, uid, skey):
                             return
                 Thread(target=check_api_backup, daemon=True).start()
 
+    def start_super_speed_loop():
+        """Vòng lặp siêu tốc 0.000001 giây: Vừa nhảy phòng vừa chủ động quét ván mới để đảm bảo cược liên tục"""
+        def background_loop():
+            rooms = [1, 2, 3, 4, 5, 6, 7, 8]
+            while escape_cfg["global_running"] and not acc_st["random_stop"].is_set():
+                r_id = random.choice(rooms)
+                try:
+                    # Nhảy phòng tốc độ 0.000001 giây
+                    session_req.post("https://api.escapemaster.net/escape_game/enter_room",
+                                     json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(r_id)},
+                                     headers=get_headers(), timeout=2)
+                    
+                    # Quét chủ động lịch sử ván gần nhất để tự bắt ván mới nếu WebSocket bị nghẽn
+                    data = get_my_joined(1)
+                    items = data.get("items", [])
+                    if items:
+                        latest = items[0]
+                        current_issue = str(latest.get("issue_id", ""))
+                        status = latest.get("status") # Trạng thái ván đang diễn ra hoặc chờ
+                        if current_issue and status in [0, 1, "betting", "running"]:
+                            execute_bet_action(current_issue)
+                except: pass
+                time.sleep(0.000001)
+        Thread(target=background_loop, daemon=True).start()
+
     def on_message(ws, message):
         try:
             data = json.loads(message)
             msg_type = data.get("msg_type", "")
-            
-            # Xử lý tất cả các dạng tín hiệu thông báo ván mới / đếm ngược từ server
             if msg_type in ["notify_count_down", "notify_game_start", "game_start", "count_down"]:
-                issue_id = data.get("issue_id") or data.get("id")
-                count_down = data.get("count_down", 30)
+                issue_id = str(data.get("issue_id") or data.get("id") or "")
                 if issue_id:
-                    do_bet(issue_id, count_down)
+                    execute_bet_action(issue_id)
             elif msg_type in ["notify_result", "game_result"]:
-                issue_id = data.get("issue_id")
+                issue_id = str(data.get("issue_id", ""))
                 if issue_id and issue_id == ws_state["betting_issue_id"]:
                     award = float(data.get("award_amount", 0))
                     bet = float(data.get("bet_amount", 0))
@@ -1036,8 +1041,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
             "user_id": int(uid),
             "user_secret_key": skey
         }))
-        # Bật ngay luồng nhảy phòng siêu tốc khi kết nối thành công
-        start_super_speed_rooms()
+        start_super_speed_loop()
 
     while escape_cfg["global_running"] and not acc_st["random_stop"].is_set():
         if escape_cfg.get("max_continuous_losses", 0) > 0 and acc_st["streak_loss"] >= escape_cfg["max_continuous_losses"]:
@@ -1189,7 +1193,7 @@ def run_telebot_polling():
 # ---------------------------------------------------------
 # KHỞI CHẠY ỨNG DỤNG
 # ---------------------------------------------------------
-If __name__ == "__main__":
+if __name__ == "__main__":
     Thread(target=run_telebot_polling, daemon=True).start()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
