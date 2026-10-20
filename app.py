@@ -590,7 +590,6 @@ def show_main_menu(chat_id, message_id, is_new=False):
         types.InlineKeyboardButton("🏃 Đua Tốc Độ", callback_data="select_game_sprint")
     )
     try:
-        # Nếu có message_id cũ thì chỉnh sửa trực tiếp, không tạo tin nhắn mới để tránh rác
         if not is_new and message_id:
             bot.edit_message_text(msg_text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
         else:
@@ -929,6 +928,7 @@ def handle_text_messages(message):
     text = message.text.strip()
     cfg = get_user_config(chat_id)
 
+    # 1. XỬ LÝ NHẬP TIỀN CƯỢC CHUẨN XÁC (HỖ TRỢ SỐ THẬP PHÂN)
     game_target_bet = cfg.get("waiting_for_bet")
     if game_target_bet:
         try: bot.delete_message(chat_id, message.message_id)
@@ -957,7 +957,6 @@ def handle_text_messages(message):
             cfg["is_vip"] = True
             cfg["waiting_for_vip_code"] = False
             
-            # Xóa tin nhắn yêu cầu cũ
             if cfg.get("prompt_msg_id"):
                 try: bot.delete_message(chat_id, cfg["prompt_msg_id"])
                 except: pass
@@ -994,12 +993,9 @@ def handle_text_messages(message):
         show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_take_profit)
         return
 
-    # 🔑 XỬ LÝ NHẬP KEY KÍCH HOẠT DỌN SẠCH GIAO DIỆN
     if cfg.get("waiting_for_key"):
-        # 1. Xóa tin nhắn chứa mã Key vừa gửi cho sạch khung chat
         try: bot.delete_message(chat_id, message.message_id)
         except: pass
-        
         res = verify_key_with_server(text, str(chat_id))
         if res.get("status") == "success":
             cfg["has_valid_key"] = True
@@ -1009,8 +1005,6 @@ def handle_text_messages(message):
             session_manager.save_session_to_file(chat_id, cfg["key_expire_at"])
             
             prompt_id = cfg.get("prompt_msg_id")
-            
-            # 2. Thay vì gửi tin nhắn rời rạc, biến tin nhắn thông báo cũ thành Menu luôn!
             if prompt_id:
                 show_main_menu(chat_id, prompt_id, is_new=False)
             else:
@@ -1066,7 +1060,7 @@ def handle_text_messages(message):
         except: pass
 
 # ---------------------------------------------------------
-# AUTO BOT ENGINES (STRICT LOCK - DECIMAL PRECISION)
+# AUTO BOT ENGINES (ĐỌC TIỀN CƯỢC MỚI NHẤT TRỰC TIẾP TỪ CONFIG)
 # ---------------------------------------------------------
 def run_escape_bot_engine(chat_id, uid, skey):
     print(f"🚀 [ESCAPE ENGINE] Bắt đầu chạy cho UID: {uid}")
@@ -1161,6 +1155,8 @@ def run_escape_bot_engine(chat_id, uid, skey):
             if issue_id and issue_id != last_bet_issue and count_down > 3:
                 last_bet_issue = issue_id
                 room = random.randint(1, 8)
+                
+                # 💡 Lấy trực tiếp tiền cược mới nhất vừa sửa từ bàn phím Telegram
                 current_base_bet = escape_cfg["base_bet"]
                 
                 if enter_room(room):
@@ -1257,6 +1253,7 @@ def run_sprint_bot_engine(chat_id, uid, skey):
             chosen_athletes = random.sample(athletes, 3)
             chosen = [a["id"] for a in chosen_athletes]
             
+            # 💡 Lấy tiền cược tổng từ config user vừa sửa để chia đều chuẩn xác
             base_build = Decimal(str(sprint_cfg["bet_amount_total"]))
             each_bet = (base_build / Decimal(len(chosen))).quantize(
                 Decimal("0.000001"), rounding=ROUND_DOWN
