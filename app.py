@@ -50,11 +50,12 @@ def save_key_to_cloud(key_code, data):
         keys_db = load_keys()
         keys_db[key_code] = {
             "status": data.get("status", "chua_dung"),
-            "used_by": str(data.get("used_by")) if data.get("used_by") else None,
+            "used_by": data.get("used_by", []), # Hỗ trợ lưu danh sách nhiều user ID đã nhập
             "created_at": data.get("created_at", time.time()),
             "expire_at": data.get("expire_at"),
             "duration_hours": data.get("duration_hours", 24),
-            "is_vip": data.get("is_vip", False)
+            "is_vip": data.get("is_vip", False),
+            "max_uses": int(data.get("max_uses", 1)) # Giới hạn số lượng người được phép nhập chung 1 key
         }
         url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}"
         headers = {"Content-Type": "application/json", "X-Master-Key": JSONBIN_API_KEY}
@@ -167,11 +168,12 @@ def claim_key():
     new_key = "KEY-XW-" + ''.join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=8))
     key_data = {
         "status": "chua_dung", 
-        "used_by": None, 
+        "used_by": [], 
         "created_at": time.time(), 
         "expire_at": None, 
         "duration_hours": 24,
-        "is_vip": False
+        "is_vip": False,
+        "max_uses": 1
     }
     save_key_to_cloud(new_key, key_data)
     return redirect(url_for('home', key=new_key))
@@ -188,12 +190,22 @@ def api_verify_key():
     k_data = keys_db[key_code]
     duration_secs = int(k_data.get("duration_hours", 24) * 3600)
     is_vip = k_data.get("is_vip", False)
+    used_by_list = k_data.get("used_by", [])
+    if isinstance(used_by_list, str): used_by_list = [used_by_list] if used_by_list else []
     
-    if k_data.get("status") == "da_dung":
-        return {"status": "error", "msg": "Mã này đã được sử dụng rồi! Không thể dùng lại."}
+    max_uses = int(k_data.get("max_uses", 1))
+    
+    if user_id in used_by_list:
+        return {"status": "error", "msg": "Bạn đã sử dụng mã này rồi!"}
         
-    k_data["status"] = "da_dung"
-    k_data["used_by"] = str(user_id)
+    if len(used_by_list) >= max_uses:
+        return {"status": "error", "msg": "Mã này đã đạt giới hạn số người sử dụng!"}
+        
+    used_by_list.append(user_id)
+    k_data["used_by"] = used_by_list
+    if len(used_by_list) >= max_uses:
+        k_data["status"] = "da_dung"
+        
     expire_time = time.time() + duration_secs
     k_data["expire_at"] = expire_time
     
@@ -241,7 +253,7 @@ def admin_dashboard():
     now = time.time()
     
     total_keys_count = len(keys_db)
-    used_keys_count = sum(1 for k, info in keys_db.items() if info.get('status') == 'da_dung')
+    used_keys_count = sum(1 for k, info in keys_db.items() if len(info.get('used_by', [])) > 0)
     unused_keys_count = total_keys_count - used_keys_count
 
     html = """
@@ -266,6 +278,7 @@ def admin_dashboard():
         th { color: #94a3b8; font-weight: 600; }
         code { background: #0b0f19; padding: 4px 6px; border-radius: 6px; color: #4ade80; font-family: monospace; font-size: 11px; }
         .btn-del { background: rgba(239, 68, 68, 0.15); color: #f87171; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; text-decoration: none; font-size: 11px; font-weight: 600; display: inline-block; }
+        .btn-del-all { background: rgba(239, 68, 68, 0.25); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); padding: 8px 14px; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 12px; text-decoration: none; display: inline-block; }
         .btn-copy-code { background: rgba(99, 102, 241, 0.15); color: #818cf8; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 600; }
         .btn-update { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 600; }
         .btn-add { background: #22c55e; color: #fff; border: none; padding: 10px 16px; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 12px; }
@@ -281,7 +294,10 @@ def admin_dashboard():
     <div class="container">
         <div class="header-flex">
             <h2>⚙️ Quản Lý Key Bản Quyền & VIP</h2>
-            <a href="/admin/logout" class="logout">Đăng xuất</a>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <a href="/admin/delete_all" class="btn-del-all" onclick="return confirm('Cảnh báo: Xóa sạch toàn bộ kho key?')">🗑️ Xóa Sạch Kho Key</a>
+                <a href="/admin/logout" class="logout">Đăng xuất</a>
+            </div>
         </div>
         
         <div class="stats-grid">
@@ -308,6 +324,10 @@ def admin_dashboard():
                 <label style="font-size: 11px; font-weight: 600; color: #94a3b8;">Số lượng:</label>
                 <input type="number" id="customQty" value="1" min="1" max="100">
             </div>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+                <label style="font-size: 11px; font-weight: 600; color: #94a3b8;">Số người nhập:</label>
+                <input type="number" id="maxUses" value="1" min="1" max="1000">
+            </div>
             <div style="display: flex; gap: 8px; margin-top: 16px;">
                 <button class="btn-add" onclick="createCustomKey(false)">➕ Tạo Key Thường</button>
                 <button class="btn-vip" onclick="createCustomKey(true)">👑 Tạo Code VIP</button>
@@ -319,8 +339,8 @@ def admin_dashboard():
                 <tr>
                     <th>Mã Key / VIP</th>
                     <th>Loại</th>
-                    <th>Cài Giờ Hạn (Tiếng)</th>
-                    <th>Trạng Thái & Số Lượng Người Nhập</th>
+                    <th>Cài Giờ (Tiếng)</th>
+                    <th>Số Người Nhập / Giới Hạn</th>
                     <th>Thao Tác</th>
                 </tr>
                 {% for k, info in keys.items() %}
@@ -328,6 +348,9 @@ def admin_dashboard():
                 {% set remain = (expire_at - now) if expire_at and expire_at > now else 0 %}
                 {% set rem_h = (remain // 3600)|int %}
                 {% set rem_m = ((remain % 3600) // 60)|int %}
+                {% set used_list = info.get('used_by', []) %}
+                {% if used_list is string %}{% set used_list = [used_list] if used_list else [] %}{% endif %}
+                {% set max_u = info.get('max_uses', 1) %}
                 <tr>
                     <td><code>{{ k }}</code></td>
                     <td>{% if info.get('is_vip') %}<b style="color:#eab308">VIP 👑</b>{% else %}<span style="color:#94a3b8">Thường</span>{% endif %}</td>
@@ -338,11 +361,9 @@ def admin_dashboard():
                         </div>
                     </td>
                     <td>
-                        {% if info.get('status') == 'da_dung' %}
-                            <span class="status-used">👤 Đã có 1 người nhập (ID: {{ info.get('used_by') }})</span><br>
+                        <span class="status-used">👤 Đã có {{ used_list|length }} / {{ max_u }} người nhập</span><br>
+                        {% if expire_at and expire_at > now %}
                             <small style="color: #38bdf8;">⏳ Còn: {{ rem_h }}h {{ rem_m }}p</small>
-                        {% else %}
-                            <span class="status-new">🟢 Chưa có ai nhập (0/1)</span>
                         {% endif %}
                     </td>
                     <td>
@@ -370,10 +391,11 @@ def admin_dashboard():
     function createCustomKey(isVip) {
         let hours = document.getElementById("customHours").value;
         let qty = document.getElementById("customQty").value;
+        let maxUses = document.getElementById("maxUses").value;
         fetch("/admin/create_custom_key", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ hours: hours, quantity: qty, is_vip: isVip })
+            body: JSON.stringify({ hours: hours, quantity: qty, max_uses: maxUses, is_vip: isVip })
         })
         .then(res => res.json())
         .then(data => {
@@ -410,6 +432,7 @@ def admin_create_custom_key():
         req_data = request.json or {}
         hours = float(req_data.get("hours", 24))
         quantity = int(req_data.get("quantity", 1))
+        max_uses = int(req_data.get("max_uses", 1))
         is_vip = bool(req_data.get("is_vip", False))
         
         prefix = "VIP-" if is_vip else "ADMIN-"
@@ -419,11 +442,12 @@ def admin_create_custom_key():
             new_key = prefix + ''.join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=8))
             keys_db[new_key] = {
                 "status": "chua_dung",
-                "used_by": None,
+                "used_by": [],
                 "created_at": time.time(),
                 "expire_at": None,
                 "duration_hours": hours,
-                "is_vip": is_vip
+                "is_vip": is_vip,
+                "max_uses": max_uses
             }
             
         url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}"
@@ -450,19 +474,6 @@ def admin_update_key_time():
         k_data = keys_db[key_code]
         k_data["duration_hours"] = new_hours
         
-        if k_data.get("status") == "da_dung":
-            now = time.time()
-            current_expire = k_data.get("expire_at", now)
-            base_time = max(now, current_expire)
-            k_data["expire_at"] = base_time + (new_hours * 3600)
-            
-            used_user_id = str(k_data.get("used_by"))
-            for cid, ucfg in user_data.items():
-                if str(cid) == used_user_id:
-                    ucfg["key_expire_at"] = k_data["expire_at"]
-                    ucfg["has_valid_key"] = True
-                    session_manager.save_session_to_file(cid, k_data["expire_at"])
-            
         save_key_to_cloud(key_code, k_data)
         return jsonify({"success": True})
     except Exception as e:
@@ -473,6 +484,17 @@ def admin_delete():
     if not session.get('admin_logged'): return redirect(url_for('admin_login'))
     k = request.args.get('key')
     if k: delete_key_from_cloud(k)
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/delete_all')
+def admin_delete_all():
+    if not session.get('admin_logged'): return redirect(url_for('admin_login'))
+    if JSONBIN_BIN_ID and JSONBIN_API_KEY:
+        try:
+            url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}"
+            headers = {"Content-Type": "application/json", "X-Master-Key": JSONBIN_API_KEY}
+            requests.put(url, json={"keys": {}}, headers=headers, timeout=5)
+        except: pass
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/logout')
@@ -543,7 +565,6 @@ def verify_key_with_server(key_code, user_id):
     except:
         return {"status": "error", "msg": "Không thể kết nối máy chủ xác thực key!"}
 
-# 🛠️ KIỂM TRA HẠN KEY VÀ VIP THEO THỜI GIAN THỰC
 def check_key_validity(chat_id):
     cfg = get_user_config(chat_id)
     keys_db = load_keys()
@@ -553,14 +574,16 @@ def check_key_validity(chat_id):
     key_valid = False
     
     for k, info in keys_db.items():
-        if str(info.get("used_by")) == str(chat_id):
+        used_list = info.get("used_by", [])
+        if isinstance(used_list, str): used_list = [used_list] if used_list else []
+        
+        if str(chat_id) in used_list:
             expire_at = info.get("expire_at", 0)
             if expire_at and now < expire_at:
                 key_valid = True
                 cfg["has_valid_key"] = True
                 cfg["key_expire_at"] = expire_at
                 
-                # Nếu Key này là loại VIP thì duy trì quyền VIP
                 if info.get("is_vip"):
                     vip_valid = True
                     cfg["is_vip"] = True
@@ -568,11 +591,9 @@ def check_key_validity(chat_id):
                 session_manager.save_session_to_file(chat_id, expire_at)
                 break
 
-    # Nếu cũng check theo biến tĩnh trong bộ nhớ
     if not vip_valid and cfg.get("vip_expire_at", 0) > now:
         vip_valid = True
 
-    # 🔴 NẾU HẾT HẠN VIP: TỰ ĐỘNG KHÓA VÀ TRẢ SỐ VÁN VỀ MẶC ĐỊNH 100
     if not vip_valid:
         cfg["is_vip"] = False
         cfg["vip_expire_at"] = 0
@@ -989,7 +1010,7 @@ def handle_text_messages(message):
         show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_max_rounds_vip)
         return
 
-    # LOGIC XÁC THỰC VIP MỚI - GHI NHỚ THỜI HẠN DÙNG CHUẨN XÁC
+    # KÍCH HOẠT VIP THÀNH CÔNG -> XÓA LUÔN KHUNG NHẬP MÃ VIP ĐỂ TRÁNH RỐI MẮT
     if cfg.get("waiting_for_vip_code"):
         try: bot.delete_message(chat_id, message.message_id)
         except: pass
@@ -999,16 +1020,24 @@ def handle_text_messages(message):
         
         if key_code in keys_db:
             k_data = keys_db[key_code]
-            if k_data.get("status") == "da_dung":
-                err_msg = "Mã Code VIP này đã được sử dụng rồi!"
-            elif not k_data.get("is_vip", False):
+            used_by_list = k_data.get("used_by", [])
+            if isinstance(used_by_list, str): used_by_list = [used_by_list] if used_by_list else []
+            max_uses = int(k_data.get("max_uses", 1))
+            
+            if not k_data.get("is_vip", False):
                 err_msg = "Đây là Key Thường, không phải Code VIP!"
+            elif len(used_by_list) >= max_uses and str(chat_id) not in used_by_list:
+                err_msg = "Mã Code VIP này đã đạt giới hạn số người sử dụng!"
             else:
+                if str(chat_id) not in used_by_list:
+                    used_by_list.append(str(chat_id))
+                
                 duration_secs = int(k_data.get("duration_hours", 24) * 3600)
                 expire_time = time.time() + duration_secs
                 
-                k_data["status"] = "da_dung"
-                k_data["used_by"] = str(chat_id)
+                k_data["used_by"] = used_by_list
+                if len(used_by_list) >= max_uses:
+                    k_data["status"] = "da_dung"
                 k_data["expire_at"] = expire_time
                 save_key_to_cloud(key_code, k_data)
                 
@@ -1018,17 +1047,17 @@ def handle_text_messages(message):
                 cfg["key_expire_at"] = expire_time
                 cfg["waiting_for_vip_code"] = False
                 
+                # 🧹 XÓA LUÔN TIN NHẮN KHUNG NHẬP MÃ VIP CŨ TRÊN TELEGRAM
                 prompt_id = cfg.get("prompt_msg_id")
-                active_g = cfg.get("active_game", "escape")
-                
                 if prompt_id:
-                    try:
-                        show_vip_settings_menu(chat_id, prompt_id, active_g)
-                    except:
-                        show_main_menu(chat_id, message.message_id, is_new=True)
+                    try: bot.delete_message(chat_id, prompt_id)
+                    except: pass
+                
+                active_g = cfg.get("active_game", "escape")
+                show_game_menu(chat_id, cfg.get("menu_msg_id"), active_g)
                 return
         else:
-            err_msg = "Mã Code VIP không tồn tại trong hệ thống của Admin!"
+            err_msg = "Mã Code VIP không tồn tại trong hệ thống!"
 
         def send_and_auto_delete_err():
             try:
@@ -1077,7 +1106,12 @@ def handle_text_messages(message):
             cfg["is_vip"] = res.get("is_vip", False)
             cfg["key_expire_at"] = res.get("expire_at", time.time() + 86400)
             session_manager.save_session_to_file(chat_id, cfg["key_expire_at"])
-            bot.send_message(chat_id, "✅ **Kích hoạt Key thành công!**", parse_mode="Markdown")
+            
+            prompt_id = cfg.get("prompt_msg_id")
+            if prompt_id:
+                try: bot.delete_message(chat_id, prompt_id)
+                except: pass
+            
             show_main_menu(chat_id, message.message_id, is_new=True)
         else:
             err_msg = res.get("msg", "Key không hợp lệ hoặc đã được sử dụng!")
