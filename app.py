@@ -24,6 +24,9 @@ app.secret_key = "dung_license_secret_key_1612012"
 ADMIN_PASSWORD = "dung1612012"
 LINK4M_API_TOKEN = "68a76c1354de3f0da567ca17"
 
+# Biến lưu lịch sử request theo IP để chống spam web lấy key
+ip_request_history = {}
+
 # ---------------------------------------------------------
 # 🗄️ KẾT NỐI JSONBIN.IO (LƯU TRỮ KEY VĨNH VIỄN TRÊN CLOUD)
 # ---------------------------------------------------------
@@ -40,7 +43,6 @@ def load_keys():
         if res.status_code == 200:
             raw_keys = res.json().get("record", {}).get("keys", {})
             clean_keys = {}
-            # TỰ ĐỘNG ÉP KIỂU & VÁ LỖI DỮ LIỆU CŨ TỪ JSONBIN (CHỐNG LỖI 500)
             for k, info in raw_keys.items():
                 if not isinstance(info, dict):
                     continue
@@ -177,6 +179,21 @@ def home():
 
 @app.route('/get_link4m')
 def get_link4m():
+    # 🛡️ CHỐNG SPAM REQUEST THEO IP (Tối đa 3 lần / 60 giây)
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    now = time.time()
+    
+    if client_ip not in ip_request_history:
+        ip_request_history[client_ip] = []
+        
+    ip_request_history[client_ip] = [t for t in ip_request_history[client_ip] if now - t < 60]
+    
+    if len(ip_request_history[client_ip]) >= 3:
+        return redirect(url_for('home', error="⚠️ Phát hiện spam! IP của bạn thao tác quá nhanh, vui lòng thử lại sau 1 phút."))
+        
+    ip_request_history[client_ip].append(now)
+    # ---------------------------------------------
+
     current_domain = request.host_url.rstrip('/')
     destination_url = f"{current_domain}/claim_key"
     api_url = f"https://link4m.co/api-shorten/v2?api={LINK4M_API_TOKEN}&url={destination_url}"
