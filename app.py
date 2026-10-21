@@ -401,22 +401,20 @@ def admin_update_key_time():
     try:
         req_data = request.json or {}
         key_code = req_data.get("key")
-        additional_hours = float(req_data.get("hours", 24))
+        new_hours = float(req_data.get("hours", 24))
         
         keys_db = load_keys()
         if key_code not in keys_db:
             return jsonify({"success": False, "msg": "Key không tồn tại!"})
             
         k_data = keys_db[key_code]
-        k_data["duration_hours"] = additional_hours
+        k_data["duration_hours"] = new_hours
         
-        # Nếu key đã được sử dụng rồi, ta cộng dồn hoặc thiết lập lại thời hạn hết hạn tính từ hiện tại hoặc gia hạn tiếp
         if k_data.get("status") == "da_dung" and k_data.get("expire_at"):
-            # Cộng thêm số giờ mới vào thời gian hết hạn hiện tại (hoặc gia hạn mới)
             current_expire = k_data["expire_at"]
             now = time.time()
             base_time = max(now, current_expire)
-            k_data["expire_at"] = base_time + (additional_hours * 3600)
+            k_data["expire_at"] = base_time + (new_hours * 3600)
             
         save_key_to_cloud(key_code, k_data)
         return jsonify({"success": True})
@@ -1061,37 +1059,6 @@ def update_menu_live(chat_id, game_type):
         )
         bot.edit_message_text(msg_text, chat_id, menu_msg_id, reply_markup=markup, parse_mode="Markdown")
     except: pass
-
-# ---------------------------------------------------------
-# API CẬP NHẬT THỜI GIAN TRỰC TIẾP TỪ TRANG ADMIN
-# ---------------------------------------------------------
-@app.route('/admin/update_key_time', methods=['POST'])
-def admin_update_key_time():
-    if not session.get('admin_logged'): 
-        return jsonify({"success": False, "msg": "Chưa đăng nhập!"})
-    try:
-        req_data = request.json or {}
-        key_code = req_data.get("key")
-        new_hours = float(req_data.get("hours", 24))
-        
-        keys_db = load_keys()
-        if key_code not in keys_db:
-            return jsonify({"success": False, "msg": "Key không tồn tại!"})
-            
-        k_data = keys_db[key_code]
-        k_data["duration_hours"] = new_hours
-        
-        # Nếu key đã được sử dụng, cập nhật lại mốc hết hạn tính từ thời điểm hiện tại hoặc cộng dồn
-        if k_data.get("status") == "da_dung" and k_data.get("expire_at"):
-            current_expire = k_data["expire_at"]
-            now = time.time()
-            base_time = max(now, current_expire)
-            k_data["expire_at"] = base_time + (new_hours * 3600)
-            
-        save_key_to_cloud(key_code, k_data)
-        return jsonify({"success": True})
-    except Exception as e:
-        return jsonify({"success": False, "msg": str(e)})
 
 # ---------------------------------------------------------
 # ENGINE TỐC ĐỘ: NHẢY PHÒNG SIÊU TỐC, CƯỢC 60 GIÂY
