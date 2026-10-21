@@ -176,7 +176,6 @@ def claim_key():
     save_key_to_cloud(new_key, key_data)
     return redirect(url_for('home', key=new_key))
 
-# API XÁC THỰC KEY THƯỜNG
 @app.route('/api/verify_key')
 def api_verify_key():
     key_code = request.args.get('key', '').strip()
@@ -772,7 +771,7 @@ def callback_game_actions(call):
         if not cfg.get("is_vip"):
             cfg["waiting_for_vip_code"] = True
             cfg["prompt_msg_id"] = call.message.message_id
-            msg_vip = "👑 **TÍNH NĂNG VIP BỊ KHÓA** 🔒\n━━━━━━━━━━━━━━━━━━━\n✨ *Key Thường giới hạn cố định 100 ván.*\n✨ *Nhập Mã Code VIP để mở khóa:*\n• 🔢 Thay đổi giới hạn số ván (Vô hạn hoặc tùy chọn)\n• 🛑 Tự dừng khi thua liên tiếp X ván\n• 📉 Tự ngắt khi chạm ngưỡng Cắt Lỗ\n• 🎯 Tự ngắt khi đạt mục tiêu Chốt Lời\n\n👉 **Vui lòng nhập Mã Code VIP để mở khóa:**"
+            msg_vip = "👑 **TÍNH NĂNG VIP BỊ KHÓA** 🔒\n━━━━━━━━━━━━━━━━━━━\n✨ *Key Thường giới hạn cố định 100 ván.*\n✨ *Nhập Mã Code VIP để mở khóa:*\n• 🔢 Thay đổi giới hạn số ván (Vô hạn hoặc tùy chọn)\n• 🛑 Tự dừng khi thua liên tiếp X ván\n• 📉 Tự ngắt khi chạm ngưỡng Cắt Lỗ\n• 🎯 Tự ngắt khi đạt mục tiêu Chốt Lời\n\n👉 **Vui lòng nhập Mã Code VIP do Admin cấp để mở khóa:**"
             try: bot.edit_message_text(msg_vip, chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
             except: pass
         else:
@@ -971,7 +970,7 @@ def handle_text_messages(message):
         show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_max_rounds_vip)
         return
 
-    # XỬ LÝ NHẬP MÃ VIP TRỰC TIẾP TRÊN CLOUD (CHẮC CHẮN MỞ ĐƯỢC MENU)
+    # LOGIC XÁC THỰC MÃ VIP CHUẨN XÁC: CHỈ CHO PHÉP MÃ TỒN TẠI TRONG KHO ADMIN VÀ LÀ KEY VIP
     if cfg.get("waiting_for_vip_code"):
         try: bot.delete_message(chat_id, message.message_id)
         except: pass
@@ -983,14 +982,16 @@ def handle_text_messages(message):
             k_data = keys_db[key_code]
             if k_data.get("status") == "da_dung":
                 err_msg = "Mã Code VIP này đã được sử dụng rồi!"
+            elif not k_data.get("is_vip", False):
+                err_msg = "Đây là Key Thường, không phải Code VIP!"
             else:
+                # KÍCH HOẠT VIP THÀNH CÔNG NẾU KHỎA MÃN TẤT CẢ ĐIỀU KIỆN
                 duration_secs = int(k_data.get("duration_hours", 24) * 3600)
                 expire_time = time.time() + duration_secs
                 
                 k_data["status"] = "da_dung"
                 k_data["used_by"] = str(chat_id)
                 k_data["expire_at"] = expire_time
-                k_data["is_vip"] = True
                 save_key_to_cloud(key_code, k_data)
                 
                 cfg["is_vip"] = True
@@ -1008,7 +1009,7 @@ def handle_text_messages(message):
                         show_main_menu(chat_id, message.message_id, is_new=True)
                 return
         else:
-            err_msg = "Mã Code VIP không tồn tại trên hệ thống!"
+            err_msg = "Mã Code VIP không tồn tại trong hệ thống của Admin!"
 
         def send_and_auto_delete_err():
             try:
