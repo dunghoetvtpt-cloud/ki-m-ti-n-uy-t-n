@@ -38,8 +38,27 @@ def load_keys():
         headers = {"X-Master-Key": JSONBIN_API_KEY}
         res = requests.get(url, headers=headers, timeout=5)
         if res.status_code == 200:
-            return res.json().get("record", {}).get("keys", {})
-    except:
+            raw_keys = res.json().get("record", {}).get("keys", {})
+            clean_keys = {}
+            # TỰ ĐỘNG ÉP KIỂU & VÁ LỖI DỮ LIỆU CŨ TỪ JSONBIN (CHỐNG LỖI 500)
+            for k, info in raw_keys.items():
+                if not isinstance(info, dict):
+                    continue
+                ub = info.get("used_by", [])
+                if isinstance(ub, str) or isinstance(ub, int):
+                    info["used_by"] = [str(ub)] if ub else []
+                elif ub is None:
+                    info["used_by"] = []
+                elif not isinstance(ub, list):
+                    info["used_by"] = []
+                else:
+                    info["used_by"] = [str(x) for x in ub if x is not None]
+                
+                info["max_uses"] = int(info.get("max_uses", 1))
+                info["is_vip"] = bool(info.get("is_vip", False))
+                clean_keys[k] = info
+            return clean_keys
+    except Exception as e:
         pass
     return {}
 
@@ -48,14 +67,22 @@ def save_key_to_cloud(key_code, data):
         return
     try:
         keys_db = load_keys()
+        ub = data.get("used_by", [])
+        if isinstance(ub, str) or isinstance(ub, int): 
+            ub = [str(ub)] if ub else []
+        elif ub is None:
+            ub = []
+        else:
+            ub = [str(x) for x in ub if x is not None]
+
         keys_db[key_code] = {
             "status": data.get("status", "chua_dung"),
-            "used_by": data.get("used_by", []), # Hỗ trợ lưu danh sách nhiều user ID đã nhập
+            "used_by": ub,
             "created_at": data.get("created_at", time.time()),
             "expire_at": data.get("expire_at"),
             "duration_hours": data.get("duration_hours", 24),
-            "is_vip": data.get("is_vip", False),
-            "max_uses": int(data.get("max_uses", 1)) # Giới hạn số lượng người được phép nhập chung 1 key
+            "is_vip": bool(data.get("is_vip", False)),
+            "max_uses": int(data.get("max_uses", 1))
         }
         url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}"
         headers = {"Content-Type": "application/json", "X-Master-Key": JSONBIN_API_KEY}
@@ -181,7 +208,7 @@ def claim_key():
 @app.route('/api/verify_key')
 def api_verify_key():
     key_code = request.args.get('key', '').strip()
-    user_id = request.args.get('user_id', '').strip()
+    user_id = str(request.args.get('user_id', '')).strip()
     keys_db = load_keys()
     
     if key_code not in keys_db:
@@ -189,10 +216,9 @@ def api_verify_key():
         
     k_data = keys_db[key_code]
     duration_secs = int(k_data.get("duration_hours", 24) * 3600)
-    is_vip = k_data.get("is_vip", False)
-    used_by_list = k_data.get("used_by", [])
-    if isinstance(used_by_list, str): used_by_list = [used_by_list] if used_by_list else []
+    is_vip = bool(k_data.get("is_vip", False))
     
+    used_by_list = k_data.get("used_by", [])
     max_uses = int(k_data.get("max_uses", 1))
     
     if user_id in used_by_list:
@@ -349,7 +375,6 @@ def admin_dashboard():
                 {% set rem_h = (remain // 3600)|int %}
                 {% set rem_m = ((remain % 3600) // 60)|int %}
                 {% set used_list = info.get('used_by', []) %}
-                {% if used_list is string %}{% set used_list = [used_list] if used_list else [] %}{% endif %}
                 {% set max_u = info.get('max_uses', 1) %}
                 <tr>
                     <td><code>{{ k }}</code></td>
@@ -575,8 +600,6 @@ def check_key_validity(chat_id):
     
     for k, info in keys_db.items():
         used_list = info.get("used_by", [])
-        if isinstance(used_list, str): used_list = [used_list] if used_list else []
-        
         if str(chat_id) in used_list:
             expire_at = info.get("expire_at", 0)
             if expire_at and now < expire_at:
@@ -1010,7 +1033,6 @@ def handle_text_messages(message):
         show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_max_rounds_vip)
         return
 
-    # KÍCH HOẠT VIP THÀNH CÔNG -> XÓA LUÔN KHUNG NHẬP MÃ VIP ĐỂ TRÁNH RỐI MẮT
     if cfg.get("waiting_for_vip_code"):
         try: bot.delete_message(chat_id, message.message_id)
         except: pass
@@ -1021,7 +1043,6 @@ def handle_text_messages(message):
         if key_code in keys_db:
             k_data = keys_db[key_code]
             used_by_list = k_data.get("used_by", [])
-            if isinstance(used_by_list, str): used_by_list = [used_by_list] if used_by_list else []
             max_uses = int(k_data.get("max_uses", 1))
             
             if not k_data.get("is_vip", False):
@@ -1047,7 +1068,6 @@ def handle_text_messages(message):
                 cfg["key_expire_at"] = expire_time
                 cfg["waiting_for_vip_code"] = False
                 
-                # 🧹 XÓA LUÔN TIN NHẮN KHUNG NHẬP MÃ VIP CŨ TRÊN TELEGRAM
                 prompt_id = cfg.get("prompt_msg_id")
                 if prompt_id:
                     try: bot.delete_message(chat_id, prompt_id)
