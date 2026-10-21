@@ -972,10 +972,11 @@ def handle_text_messages(message):
         show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_max_rounds_vip)
         return
 
-    # SỬA TRIỆT ĐỂ: KÍCH HOẠT VIP XONG LÀ TỰ ĐỘNG MỞ MENU CÀI ĐẶT NGAY LẬP TỨC
+    # XỬ LÝ NHẬP MÃ VIP: XÓA KHUNG CHAT CŨ VÀ MỞ THẲNG MENU CẤU HÌNH VIP
     if cfg.get("waiting_for_vip_code"):
         try: bot.delete_message(chat_id, message.message_id)
         except: pass
+        
         res = verify_key_with_server(text, str(chat_id))
         if res.get("status") == "success" and res.get("is_vip"):
             cfg["is_vip"] = True
@@ -983,7 +984,6 @@ def handle_text_messages(message):
             cfg["key_expire_at"] = res.get("expire_at", time.time() + 86400)
             cfg["waiting_for_vip_code"] = False
             
-            # Cập nhật trạng thái đã dùng lên Cloud để Admin quản lý chuẩn xác
             keys_db = load_keys()
             if text in keys_db:
                 keys_db[text]["status"] = "da_dung"
@@ -994,7 +994,6 @@ def handle_text_messages(message):
             prompt_id = cfg.get("prompt_msg_id")
             active_g = cfg.get("active_game", "escape")
             
-            # Mở thẳng menu cấu hình VIP tại chỗ tin nhắn nhập mã luôn
             if prompt_id:
                 try:
                     show_vip_settings_menu(chat_id, prompt_id, active_g)
