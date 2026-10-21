@@ -502,7 +502,7 @@ def get_user_config(chat_id):
                 "active_game": None, "waiting_for_link": None, "waiting_for_bet": None,
                 "waiting_for_key": False, "waiting_for_vip_code": False, "waiting_for_max_losses": None,
                 "waiting_for_stop_loss": None, "waiting_for_take_profit": None, "waiting_for_max_rounds_vip": None,
-                "is_vip": False, "has_valid_key": is_valid, "key_expire_at": expire_time, "prompt_msg_id": None, "menu_msg_id": None,
+                "is_vip": False, "vip_expire_at": 0, "has_valid_key": is_valid, "key_expire_at": expire_time, "prompt_msg_id": None, "menu_msg_id": None,
                 "escape": {
                     "accounts": {}, "global_running": False, "asset_type": "BUILD", 
                     "base_bet": 1.0, "max_rounds": 100, "killer_stats": {i: 0 for i in range(1, 9)},
@@ -543,23 +543,45 @@ def verify_key_with_server(key_code, user_id):
     except:
         return {"status": "error", "msg": "Không thể kết nối máy chủ xác thực key!"}
 
+# 🛠️ KIỂM TRA HẠN KEY VÀ VIP THEO THỜI GIAN THỰC
 def check_key_validity(chat_id):
     cfg = get_user_config(chat_id)
     keys_db = load_keys()
+    now = time.time()
+    
+    vip_valid = False
+    key_valid = False
     
     for k, info in keys_db.items():
         if str(info.get("used_by")) == str(chat_id):
             expire_at = info.get("expire_at", 0)
-            if time.time() < expire_at:
+            if expire_at and now < expire_at:
+                key_valid = True
                 cfg["has_valid_key"] = True
                 cfg["key_expire_at"] = expire_at
-                cfg["is_vip"] = info.get("is_vip", False)
-                session_manager.save_session_to_file(chat_id, expire_at)
-                return True
                 
-    if cfg["has_valid_key"] and time.time() < cfg.get("key_expire_at", 0):
+                # Nếu Key này là loại VIP thì duy trì quyền VIP
+                if info.get("is_vip"):
+                    vip_valid = True
+                    cfg["is_vip"] = True
+                    cfg["vip_expire_at"] = expire_at
+                session_manager.save_session_to_file(chat_id, expire_at)
+                break
+
+    # Nếu cũng check theo biến tĩnh trong bộ nhớ
+    if not vip_valid and cfg.get("vip_expire_at", 0) > now:
+        vip_valid = True
+
+    # 🔴 NẾU HẾT HẠN VIP: TỰ ĐỘNG KHÓA VÀ TRẢ SỐ VÁN VỀ MẶC ĐỊNH 100
+    if not vip_valid:
+        cfg["is_vip"] = False
+        cfg["vip_expire_at"] = 0
+        cfg["escape"]["max_rounds"] = 100
+        cfg["sprint"]["max_rounds"] = 100
+
+    if key_valid or (cfg["has_valid_key"] and now < cfg.get("key_expire_at", 0)):
         return True
-        
+
     cfg["has_valid_key"] = False
     cfg["escape"]["global_running"] = False
     cfg["sprint"]["global_running"] = False
@@ -686,10 +708,7 @@ def show_game_menu(chat_id, message_id, game_type):
     bet_disp = g_cfg.get('bet_amount_total') if game_type == 'sprint' else g_cfg.get('base_bet')
     
     max_r = g_cfg.get('max_rounds', 100)
-    if not cfg.get("is_vip"):
-        max_r = 100
-        g_cfg['max_rounds'] = 100
-        
+    
     tot_bets_done = sum(get_account_state(game_type, u)["total_bets"] for u in g_cfg["accounts"])
     remaining_rounds = max(0, max_r - tot_bets_done) if max_r > 0 else "Vô hạn"
     rounds_str = f"{remaining_rounds} ván (còn lại)" if max_r > 0 else "Vô hạn"
@@ -970,7 +989,7 @@ def handle_text_messages(message):
         show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_max_rounds_vip)
         return
 
-    # LOGIC XÁC THỰC MÃ VIP CHUẨN XÁC: CHỈ CHO PHÉP MÃ TỒN TẠI TRONG KHO ADMIN VÀ LÀ KEY VIP
+    # LOGIC XÁC THỰC VIP MỚI - GHI NHỚ THỜI HẠN DÙNG CHUẨN XÁC
     if cfg.get("waiting_for_vip_code"):
         try: bot.delete_message(chat_id, message.message_id)
         except: pass
@@ -985,7 +1004,6 @@ def handle_text_messages(message):
             elif not k_data.get("is_vip", False):
                 err_msg = "Đây là Key Thường, không phải Code VIP!"
             else:
-                # KÍCH HOẠT VIP THÀNH CÔNG NẾU KHỎA MÃN TẤT CẢ ĐIỀU KIỆN
                 duration_secs = int(k_data.get("duration_hours", 24) * 3600)
                 expire_time = time.time() + duration_secs
                 
@@ -995,6 +1013,7 @@ def handle_text_messages(message):
                 save_key_to_cloud(key_code, k_data)
                 
                 cfg["is_vip"] = True
+                cfg["vip_expire_at"] = expire_time
                 cfg["has_valid_key"] = True
                 cfg["key_expire_at"] = expire_time
                 cfg["waiting_for_vip_code"] = False
@@ -1111,7 +1130,6 @@ def update_menu_live(chat_id, game_type):
         bet_disp = g_cfg.get('bet_amount_total') if game_type == 'sprint' else g_cfg.get('base_bet')
         
         max_r = g_cfg.get('max_rounds', 100)
-        if not cfg.get("is_vip"): max_r = 100
         tot_bets_done = sum(get_account_state(game_type, u)["total_bets"] for u in g_cfg["accounts"])
         remaining_rounds = max(0, max_r - tot_bets_done) if max_r > 0 else "Vô hạn"
         rounds_str = f"{remaining_rounds} ván (còn lại)" if max_r > 0 else "Vô hạn"
@@ -1185,7 +1203,6 @@ def run_escape_bot_engine(chat_id, uid, skey):
         if not check_key_validity(chat_id): break
         
         max_r = escape_cfg.get("max_rounds", 100)
-        if not cfg.get("is_vip"): max_r = 100
         
         if max_r > 0 and acc_st["total_bets"] >= max_r:
             escape_cfg["global_running"] = False
@@ -1250,7 +1267,6 @@ def run_sprint_bot_engine(chat_id, uid, skey):
             break
 
         max_r = sprint_cfg.get("max_rounds", 100)
-        if not cfg.get("is_vip"): max_r = 100
         
         if max_r > 0 and acc_st["total_bets"] >= max_r:
             sprint_cfg["global_running"] = False
