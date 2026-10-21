@@ -75,7 +75,7 @@ def delete_key_from_cloud(key_code):
         pass
 
 # ---------------------------------------------------------
-# FLASK WEB ROUTES (GIAO DIỆN ĐẸP + NÚT SAO CHÉP 1 CHẠM)
+# FLASK WEB ROUTES (GIAO DIỆN SIÊU ĐẸP & TỐI ƯU MOBILE)
 # ---------------------------------------------------------
 @app.route('/')
 def home():
@@ -92,14 +92,14 @@ def home():
         <style>
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
             body { background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0f172a 100%); color: #f8fafc; min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
-            .card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); border-radius: 30px; width: 100%; max-width: 440px; padding: 40px 30px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7); }
+            .card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); border-radius: 30px; width: 100%; max-width: 440px; padding: 40px 25px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7); }
             .icon-box { width: 70px; height: 70px; background: linear-gradient(135deg, #6366f1, #a855f7); border-radius: 20px; display: flex; align-items: center; justify-content: center; font-size: 32px; margin: 0 auto 20px; box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.5); }
             .badge { display: inline-block; background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); padding: 6px 16px; border-radius: 30px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; }
             h2 { font-size: 26px; font-weight: 800; color: #fff; margin-bottom: 10px; }
             p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin-bottom: 30px; }
             .btn { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: #fff; text-decoration: none; padding: 16px; border-radius: 16px; font-weight: 700; font-size: 15px; box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.5); transition: all 0.3s ease; border: none; cursor: pointer; }
             .btn:hover { transform: translateY(-2px); box-shadow: 0 15px 30px -5px rgba(79, 70, 229, 0.7); }
-            .key-container { background: #0b0f19; border: 2px dashed #6366f1; padding: 18px; border-radius: 18px; margin-top: 15px; position: relative; }
+            .key-container { background: #0b0f19; border: 2px dashed #6366f1; padding: 18px; border-radius: 18px; margin-top: 15px; }
             .key-text { font-family: monospace; font-size: 18px; color: #4ade80; font-weight: 700; word-break: break-all; margin-bottom: 12px; }
             .btn-copy { background: #22c55e; color: #fff; border: none; padding: 10px 20px; border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: 0.2s; }
             .btn-copy:hover { background: #16a34a; }
@@ -218,7 +218,7 @@ def admin_login():
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
         body { background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0f172a 100%); color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
-        .card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); padding: 40px 30px; border-radius: 30px; width: 100%; max-width: 400px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); }
+        .card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); padding: 40px 25px; border-radius: 30px; width: 100%; max-width: 400px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); }
         h2 { color: #fff; margin-bottom: 25px; font-size: 22px; font-weight: 700; }
         input { width: 100%; padding: 15px; border-radius: 14px; border: 1px solid #334155; background: #0b0f19; color: #fff; box-sizing: border-box; margin-bottom: 20px; font-size: 15px; text-align: center; }
         input:focus { border-color: #6366f1; outline: none; }
@@ -240,66 +240,100 @@ def admin_login():
 def admin_dashboard():
     if not session.get('admin_logged'): return redirect(url_for('admin_login'))
     keys_db = load_keys()
+    now = time.time()
     html = """
     <!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Quản Lý Key</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
-        body { background: #0f172a; color: #f8fafc; padding: 30px 20px; }
-        .container { max-width: 900px; margin: 0 auto; background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); padding: 30px; border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); }
-        .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; border-bottom: 1px solid #334155; padding-bottom: 15px; }
-        h2 { color: #38bdf8; font-size: 20px; font-weight: 700; }
-        .logout { color: #f87171; text-decoration: none; font-size: 13px; font-weight: 600; background: rgba(239, 68, 68, 0.1); padding: 8px 14px; border-radius: 10px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }
-        th, td { padding: 12px; border-bottom: 1px solid #334155; text-align: left; }
+        body { background: #0f172a; color: #f8fafc; padding: 20px 10px; }
+        .container { max-width: 950px; margin: 0 auto; background: rgba(30, 41, 59, 0.85); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); padding: 20px; border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); }
+        .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #334155; padding-bottom: 12px; gap: 10px; flex-wrap: wrap; }
+        h2 { color: #38bdf8; font-size: 18px; font-weight: 700; }
+        .logout { color: #f87171; text-decoration: none; font-size: 12px; font-weight: 600; background: rgba(239, 68, 68, 0.1); padding: 6px 12px; border-radius: 8px; }
+        .table-responsive { width: 100%; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; min-width: 650px; }
+        th, td { padding: 10px; border-bottom: 1px solid #334155; text-align: left; vertical-align: middle; }
         th { color: #94a3b8; font-weight: 600; }
-        code { background: #0b0f19; padding: 4px 8px; border-radius: 6px; color: #4ade80; font-family: monospace; }
-        .btn-del { background: rgba(239, 68, 68, 0.15); color: #f87171; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; text-decoration: none; font-size: 12px; font-weight: 600; }
-        .btn-copy-code { background: rgba(99, 102, 241, 0.15); color: #818cf8; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600; margin-left: 6px; }
-        .btn-add { background: #22c55e; color: #fff; border: none; padding: 12px 20px; border-radius: 12px; cursor: pointer; font-weight: 700; font-size: 13px; }
-        .btn-vip { background: #eab308; color: #000; border: none; padding: 12px 20px; border-radius: 12px; cursor: pointer; font-weight: 700; font-size: 13px; }
+        code { background: #0b0f19; padding: 4px 6px; border-radius: 6px; color: #4ade80; font-family: monospace; font-size: 11px; }
+        .btn-del { background: rgba(239, 68, 68, 0.15); color: #f87171; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; text-decoration: none; font-size: 11px; font-weight: 600; display: inline-block; }
+        .btn-copy-code { background: rgba(99, 102, 241, 0.15); color: #818cf8; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 600; }
+        .btn-update { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 600; }
+        .btn-add { background: #22c55e; color: #fff; border: none; padding: 10px 16px; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 12px; }
+        .btn-vip { background: #eab308; color: #000; border: none; padding: 10px 16px; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 12px; }
         .status-used { color: #f87171; font-weight: 500; } .status-new { color: #4ade80; font-weight: 500; }
-        .box-create { background: #0b0f19; padding: 20px; border-radius: 16px; margin-bottom: 25px; display: flex; gap: 15px; align-items: center; flex-wrap: wrap; border: 1px solid #334155; }
-        .box-create input { padding: 10px 14px; border-radius: 10px; border: 1px solid #475569; background: #1e293b; color: #fff; width: 120px; font-size: 14px; }
-        .toast { position: fixed; bottom: 20px; right: 20px; background: #22c55e; color: white; padding: 12px 20px; border-radius: 10px; font-weight: 600; display: none; box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 1000; }
+        .box-create { background: #0b0f19; padding: 15px; border-radius: 14px; margin-bottom: 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; border: 1px solid #334155; }
+        .box-create input { padding: 8px 12px; border-radius: 8px; border: 1px solid #475569; background: #1e293b; color: #fff; width: 100px; font-size: 13px; }
+        .input-time { padding: 6px; border-radius: 6px; border: 1px solid #475569; background: #1e293b; color: #fff; width: 75px; text-align: center; font-size: 12px; }
+        .toast { position: fixed; bottom: 20px; right: 20px; background: #22c55e; color: white; padding: 10px 16px; border-radius: 8px; font-weight: 600; display: none; box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 1000; font-size: 13px; }
     </style></head>
     <body>
-    <div class="toast" id="toastMsg">✅ Đã sao chép mã thành công!</div>
+    <div class="toast" id="toastMsg">✅ Thành công!</div>
     <div class="container">
         <div class="header-flex">
-            <h2>⚙️ Quản Lý Key Bản Quyền & Code VIP</h2>
+            <h2>⚙️ Quản Lý Key Bản Quyền & VIP</h2>
             <a href="/admin/logout" class="logout">Đăng xuất</a>
         </div>
         
         <div class="box-create">
-            <label style="font-size: 13px; font-weight: 600; color: #94a3b8;">Thời hạn (Giờ):</label>
+            <label style="font-size: 12px; font-weight: 600; color: #94a3b8;">Thời hạn (Giờ):</label>
             <input type="number" id="customHours" value="24" min="1">
             <button class="btn-add" onclick="createCustomKey(false)">➕ Tạo Key Thường</button>
             <button class="btn-vip" onclick="createCustomKey(true)">👑 Tạo Code VIP</button>
         </div>
 
-        <table><tr><th>Mã Key / VIP</th><th>Loại</th><th>Thời Hạn</th><th>Trạng Thái & User</th><th>Thao Tác</th></tr>
-        {% for k, info in keys.items() %}
-        <tr>
-            <td><code>{{ k }}</code></td>
-            <td>{% if info.get('is_vip') %}<b style="color:#eab308">VIP 👑</b>{% else %}<span style="color:#94a3b8">Thường</span>{% endif %}</td>
-            <td><b>{{ info.get('duration_hours', 24) }}h</b></td>
-            <td>{% if info.get('status') == 'da_dung' %}<span class="status-used">Đã dùng (ID: {{ info.get('used_by') }})</span>{% else %}<span class="status-new">Chưa dùng</span>{% endif %}</td>
-            <td>
-                <button class="btn-copy-code" onclick="copyThisKey('{{ k }}')">📋 Sao chép</button>
-                <a href="/admin/delete?key={{ k }}" class="btn-del" onclick="return confirm('Xóa key này?')">Xóa</a>
-            </td>
-        </tr>
-        {% endfor %}</table></div>
+        <div class="table-responsive">
+            <table>
+                <tr>
+                    <th>Mã Key / VIP</th>
+                    <th>Loại</th>
+                    <th>Thời Hạn (Sửa / Thêm Giờ)</th>
+                    <th>Trạng Thái & Còn Lại</th>
+                    <th>Thao Tác</th>
+                </tr>
+                {% for k, info in keys.items() %}
+                {% set expire_at = info.get('expire_at', 0) %}
+                {% set remain = (expire_at - now) if expire_at and expire_at > now else 0 %}
+                {% set rem_h = (remain // 3600)|int %}
+                {% set rem_m = ((remain % 3600) // 60)|int %}
+                <tr>
+                    <td><code>{{ k }}</code></td>
+                    <td>{% if info.get('is_vip') %}<b style="color:#eab308">VIP 👑</b>{% else %}<span style="color:#94a3b8">Thường</span>{% endif %}</td>
+                    <td>
+                        <div style="display: flex; gap: 4px; align-items: center;">
+                            <input type="number" id="time_{{ k }}" value="{{ info.get('duration_hours', 24) }}" class="input-time">
+                            <button class="btn-update" onclick="updateKeyTime('{{ k }}')">Lưu</button>
+                        </div>
+                    </td>
+                    <td>
+                        {% if info.get('status') == 'da_dung' %}
+                            <span class="status-used">ID: {{ info.get('used_by') }}</span><br>
+                            <small style="color: #38bdf8;">⏳ Còn: {{ rem_h }}h {{ rem_m }}p</small>
+                        {% else %}
+                            <span class="status-new">Chưa dùng</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div style="display: flex; gap: 4px;">
+                            <button class="btn-copy-code" onclick="copyThisKey('{{ k }}')">📋 Sao chép</button>
+                            <a href="/admin/delete?key={{ k }}" class="btn-del" onclick="return confirm('Xóa key này?')">Xóa</a>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+    </div>
 
     <script>
-    function showToast() {
+    function showToast(msg) {
         const t = document.getElementById("toastMsg");
+        t.innerText = msg;
         t.style.display = "block";
         setTimeout(() => { t.style.display = "none"; }, 2000);
     }
     function copyThisKey(code) {
-        navigator.clipboard.writeText(code).then(() => { showToast(); });
+        navigator.clipboard.writeText(code).then(() => { showToast("✅ Đã sao chép mã!"); });
     }
     function createCustomKey(isVip) {
         let hours = document.getElementById("customHours").value;
@@ -313,10 +347,27 @@ def admin_dashboard():
             if(data.success) { location.reload(); } else { alert("Lỗi: " + data.msg); }
         });
     }
+    function updateKeyTime(key) {
+        let newHours = document.getElementById("time_" + key).value;
+        fetch("/admin/update_key_time", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ key: key, hours: newHours })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.success) {
+                showToast("✅ Đã cập nhật thời gian!");
+                setTimeout(() => { location.reload(); }, 1000);
+            } else {
+                alert("Lỗi: " + data.msg);
+            }
+        });
+    }
     </script>
     </body></html>
     """
-    return render_template_string(html, keys=keys_db, now=time.time())
+    return render_template_string(html, keys=keys_db, now=now)
 
 @app.route('/admin/create_custom_key', methods=['POST'])
 def admin_create_custom_key():
@@ -340,6 +391,35 @@ def admin_create_custom_key():
         }
         save_key_to_cloud(new_key, key_data)
         return jsonify({"success": True, "key": new_key})
+    except Exception as e:
+        return jsonify({"success": False, "msg": str(e)})
+
+@app.route('/admin/update_key_time', methods=['POST'])
+def admin_update_key_time():
+    if not session.get('admin_logged'): 
+        return jsonify({"success": False, "msg": "Chưa đăng nhập!"})
+    try:
+        req_data = request.json or {}
+        key_code = req_data.get("key")
+        additional_hours = float(req_data.get("hours", 24))
+        
+        keys_db = load_keys()
+        if key_code not in keys_db:
+            return jsonify({"success": False, "msg": "Key không tồn tại!"})
+            
+        k_data = keys_db[key_code]
+        k_data["duration_hours"] = additional_hours
+        
+        # Nếu key đã được sử dụng rồi, ta cộng dồn hoặc thiết lập lại thời hạn hết hạn tính từ hiện tại hoặc gia hạn tiếp
+        if k_data.get("status") == "da_dung" and k_data.get("expire_at"):
+            # Cộng thêm số giờ mới vào thời gian hết hạn hiện tại (hoặc gia hạn mới)
+            current_expire = k_data["expire_at"]
+            now = time.time()
+            base_time = max(now, current_expire)
+            k_data["expire_at"] = base_time + (additional_hours * 3600)
+            
+        save_key_to_cloud(key_code, k_data)
+        return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "msg": str(e)})
 
@@ -983,7 +1063,38 @@ def update_menu_live(chat_id, game_type):
     except: pass
 
 # ---------------------------------------------------------
-# ENGINE TỐC ĐỘ: NHẢY PHÒNG SIÊU TỐC (0.000000001s), CƯỢC 60 GIÂY
+# API CẬP NHẬT THỜI GIAN TRỰC TIẾP TỪ TRANG ADMIN
+# ---------------------------------------------------------
+@app.route('/admin/update_key_time', methods=['POST'])
+def admin_update_key_time():
+    if not session.get('admin_logged'): 
+        return jsonify({"success": False, "msg": "Chưa đăng nhập!"})
+    try:
+        req_data = request.json or {}
+        key_code = req_data.get("key")
+        new_hours = float(req_data.get("hours", 24))
+        
+        keys_db = load_keys()
+        if key_code not in keys_db:
+            return jsonify({"success": False, "msg": "Key không tồn tại!"})
+            
+        k_data = keys_db[key_code]
+        k_data["duration_hours"] = new_hours
+        
+        # Nếu key đã được sử dụng, cập nhật lại mốc hết hạn tính từ thời điểm hiện tại hoặc cộng dồn
+        if k_data.get("status") == "da_dung" and k_data.get("expire_at"):
+            current_expire = k_data["expire_at"]
+            now = time.time()
+            base_time = max(now, current_expire)
+            k_data["expire_at"] = base_time + (new_hours * 3600)
+            
+        save_key_to_cloud(key_code, k_data)
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "msg": str(e)})
+
+# ---------------------------------------------------------
+# ENGINE TỐC ĐỘ: NHẢY PHÒNG SIÊU TỐC, CƯỢC 60 GIÂY
 # ---------------------------------------------------------
 def run_escape_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)
@@ -1042,7 +1153,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
             rooms = [1, 2, 3, 4, 5, 6, 7, 8]
             room_id = random.choice(rooms)
             
-            # Nhảy phòng cực tốc chớp nhoáng (0.000000001s)
+            # Nhảy phòng cực tốc chớp nhoáng
             session_req.post("https://api.escapemaster.net/escape_game/enter_room",
                              json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id)},
                              headers=get_headers(), timeout=3)
