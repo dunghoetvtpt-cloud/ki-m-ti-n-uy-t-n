@@ -75,7 +75,7 @@ def delete_key_from_cloud(key_code):
         pass
 
 # ---------------------------------------------------------
-# FLASK WEB ROUTES (CỔNG LẤY KEY & TRANG QUẢN TRỊ ADMIN)
+# FLASK WEB ROUTES (GIAO DIỆN ĐẸP 1 TỶ LẦN + NÚT SAO CHÉP 1 CHẠM)
 # ---------------------------------------------------------
 @app.route('/')
 def home():
@@ -87,37 +87,61 @@ def home():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>XWORLD LICENSE GATEWAY</title>
+        <title>XWORLD LICENSE GATEWAY - VIP</title>
+        <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
         <style>
-            body { background: linear-gradient(135deg, #0f172a, #1e293b); color: #fff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-            .card { background: rgba(30, 41, 59, 0.85); backdrop-filter: blur(10px); padding: 35px; border-radius: 24px; width: 90%; max-width: 400px; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.6); border: 1px solid rgba(56, 189, 248, 0.2); }
-            .icon { font-size: 60px; margin-bottom: 10px; }
-            .badge { background: linear-gradient(90deg, #0284c7, #38bdf8); color: #fff; padding: 6px 16px; border-radius: 20px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
-            h2 { color: #38bdf8; margin: 20px 0 10px; font-size: 22px; }
-            p { color: #94a3b8; font-size: 13px; line-height: 1.6; margin-bottom: 25px; }
-            .btn { display: block; background: linear-gradient(90deg, #0284c7, #6366f1); color: #fff; text-decoration: none; padding: 15px; border-radius: 14px; font-weight: bold; font-size: 15px; box-shadow: 0 8px 20px rgba(2, 132, 199, 0.4); }
-            .btn-admin { display: block; background: rgba(51, 65, 85, 0.6); color: #94a3b8; text-decoration: none; padding: 12px; border-radius: 12px; font-size: 13px; margin-top: 15px; }
-            .key-box { background: #0b0f19; border: 2px dashed #38bdf8; padding: 14px; border-radius: 12px; margin-top: 15px; font-family: monospace; font-size: 16px; color: #4ade80; word-break: break-all; }
-            .error { background: rgba(248, 113, 113, 0.1); border: 1px solid #f87171; color: #f87171; padding: 10px; border-radius: 10px; font-size: 13px; margin-top: 15px; }
+            * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+            body { background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0f172a 100%); color: #f8fafc; min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
+            .card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); border-radius: 30px; width: 100%; max-width: 440px; padding: 40px 30px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7); }
+            .icon-box { width: 70px; height: 70px; background: linear-gradient(135deg, #6366f1, #a855f7); border-radius: 20px; display: flex; align-items: center; justify-content: center; font-size: 32px; margin: 0 auto 20px; box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.5); }
+            .badge { display: inline-block; background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); padding: 6px 16px; border-radius: 30px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; }
+            h2 { font-size: 26px; font-weight: 800; color: #fff; margin-bottom: 10px; }
+            p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin-bottom: 30px; }
+            .btn { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: #fff; text-decoration: none; padding: 16px; border-radius: 16px; font-weight: 700; font-size: 15px; box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.5); transition: all 0.3s ease; border: none; cursor: pointer; }
+            .btn:hover { transform: translateY(-2px); box-shadow: 0 15px 30px -5px rgba(79, 70, 229, 0.7); }
+            .key-container { background: #0b0f19; border: 2px dashed #6366f1; padding: 18px; border-radius: 18px; margin-top: 15px; position: relative; }
+            .key-text { font-family: monospace; font-size: 18px; color: #4ade80; font-weight: 700; word-break: break-all; margin-bottom: 12px; }
+            .btn-copy { background: #22c55e; color: #fff; border: none; padding: 10px 20px; border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: 0.2s; }
+            .btn-copy:hover { background: #16a34a; }
+            .btn-admin { display: inline-block; margin-top: 25px; color: #64748b; text-decoration: none; font-size: 13px; font-weight: 600; transition: 0.2s; }
+            .btn-admin:hover { color: #94a3b8; }
+            .error { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; padding: 12px; border-radius: 12px; font-size: 13px; margin-top: 15px; font-weight: 500; }
         </style>
     </head>
     <body>
         <div class="card">
-            <div class="icon">🔑</div>
-            <span class="badge">Hệ thống tự động 24/7</span>
+            <div class="icon-box">⚡</div>
+            <span class="badge">Hệ Thống Tự Động 24/7</span>
             <h2>XWORLD GATEWAY</h2>
-            <p>Vượt link Link4m an toàn và nhanh chóng để nhận mã bản quyền sử dụng trong 24 giờ cố định.</p>
+            <p>Vượt link an toàn và nhanh chóng để nhận mã bản quyền chính thức sử dụng trong 24 giờ.</p>
             {% if new_key %}
-                <div class="key-box"><b>{{ new_key }}</b></div>
-                <p style="color: #4ade80; margin-top: 12px; font-weight: bold;">👉 Sao chép mã trên dán vào Bot Telegram!</p>
+                <div class="key-container">
+                    <div class="key-text" id="keyText">{{ new_key }}</div>
+                    <button class="btn-copy" onclick="copyKey()">📋 Sao Chép Key Ngay</button>
+                </div>
+                <p style="color: #4ade80; margin-top: 15px; font-weight: 600; font-size: 13px;">✨ Đã tạo key thành công! Dán vào Bot Telegram nhé.</p>
             {% else %}
                 <a href="/get_link4m" class="btn">🚀 TIẾN HÀNH LẤY KEY (24H)</a>
             {% endif %}
             {% if error %}
                 <div class="error">{{ error }}</div>
             {% endif %}
-            <a href="/admin" class="btn-admin">⚙️ Đăng nhập Quản trị viên</a>
+            <a href="/admin" class="btn-admin">⚙️ Đăng nhập Quản trị viên hệ thống</a>
         </div>
+        <script>
+            function copyKey() {
+                const keyText = document.getElementById("keyText").innerText;
+                navigator.clipboard.writeText(keyText).then(() => {
+                    const btn = document.querySelector(".btn-copy");
+                    btn.innerHTML = "✅ Đã Sao Chép!";
+                    btn.style.background = "#15803d";
+                    setTimeout(() => {
+                        btn.innerHTML = "📋 Sao Chép Key Ngay";
+                        btn.style.background = "#22c55e";
+                    }, 2000);
+                });
+            }
+        </script>
     </body>
     </html>
     """
@@ -190,19 +214,23 @@ def admin_login():
     html = """
     <!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Đăng Nhập Quản Trị</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { background: #0f172a; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .card { background: #1e293b; padding: 30px; border-radius: 20px; width: 90%; max-width: 350px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-        h2 { color: #38bdf8; margin-bottom: 20px; font-size: 18px; }
-        input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #475569; background: #0f172a; color: #fff; box-sizing: border-box; margin-bottom: 15px; }
-        .btn { width: 100%; background: #0284c7; color: #fff; border: none; padding: 12px; border-radius: 10px; font-weight: bold; cursor: pointer; }
-        .error { color: #f87171; font-size: 13px; margin-bottom: 10px; }
-        .back { display: block; margin-top: 15px; color: #94a3b8; font-size: 13px; text-decoration: none; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+        body { background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0f172a 100%); color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+        .card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); padding: 40px 30px; border-radius: 30px; width: 100%; max-width: 400px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); }
+        h2 { color: #fff; margin-bottom: 25px; font-size: 22px; font-weight: 700; }
+        input { width: 100%; padding: 15px; border-radius: 14px; border: 1px solid #334155; background: #0b0f19; color: #fff; box-sizing: border-box; margin-bottom: 20px; font-size: 15px; text-align: center; }
+        input:focus { border-color: #6366f1; outline: none; }
+        .btn { width: 100%; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: #fff; border: none; padding: 15px; border-radius: 14px; font-weight: 700; cursor: pointer; font-size: 15px; box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.5); }
+        .error { color: #f87171; font-size: 13px; margin-bottom: 15px; font-weight: 500; }
+        .back { display: inline-block; margin-top: 20px; color: #64748b; font-size: 13px; text-decoration: none; font-weight: 600; }
+        .back:hover { color: #94a3b8; }
     </style></head>
     <body><div class="card">
         <h2>🔒 Quản Trị Hệ Thống</h2>
         {% if error %}<div class="error">{{ error }}</div>{% endif %}
-        <form method="POST"><input type="password" name="password" placeholder="Mật khẩu admin..." required><button type="submit" class="btn">Đăng Nhập</button></form>
+        <form method="POST"><input type="password" name="password" placeholder="Nhập mật khẩu admin..." required><button type="submit" class="btn">Đăng Nhập</button></form>
         <a href="/" class="back">← Quay lại trang chủ</a>
     </div></body></html>
     """
@@ -214,44 +242,65 @@ def admin_dashboard():
     keys_db = load_keys()
     html = """
     <!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Quản Lý Key</title>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { background: #0f172a; color: #fff; font-family: sans-serif; padding: 20px; margin: 0; }
-        .container { max-width: 750px; margin: 0 auto; background: #1e293b; padding: 20px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-        h2 { color: #38bdf8; margin-top: 0; font-size: 20px; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+        body { background: #0f172a; color: #f8fafc; padding: 30px 20px; }
+        .container { max-width: 900px; margin: 0 auto; background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); padding: 30px; border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); }
+        .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; border-bottom: 1px solid #334155; padding-bottom: 15px; }
+        h2 { color: #38bdf8; font-size: 20px; font-weight: 700; }
+        .logout { color: #f87171; text-decoration: none; font-size: 13px; font-weight: 600; background: rgba(239, 68, 68, 0.1); padding: 8px 14px; border-radius: 10px; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }
-        th, td { padding: 10px; border-bottom: 1px solid #334155; text-align: left; }
-        th { color: #94a3b8; }
-        .btn-del { background: #ef4444; color: #fff; border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; text-decoration: none; }
-        .btn-add { background: #22c55e; color: #fff; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; font-weight: bold; }
-        .btn-vip { background: #eab308; color: #000; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; font-weight: bold; }
-        .logout { float: right; color: #94a3b8; text-decoration: none; font-size: 14px; }
-        .status-used { color: #f87171; } .status-new { color: #4ade80; }
-        .box-create { background: #0f172a; padding: 15px; border-radius: 10px; margin-bottom: 15px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-        .box-create input { padding: 8px; border-radius: 6px; border: 1px solid #475569; background: #1e293b; color: #fff; width: 100px; }
+        th, td { padding: 12px; border-bottom: 1px solid #334155; text-align: left; }
+        th { color: #94a3b8; font-weight: 600; }
+        code { background: #0b0f19; padding: 4px 8px; border-radius: 6px; color: #4ade80; font-family: monospace; }
+        .btn-del { background: rgba(239, 68, 68, 0.15); color: #f87171; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; text-decoration: none; font-size: 12px; font-weight: 600; }
+        .btn-copy-code { background: rgba(99, 102, 241, 0.15); color: #818cf8; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600; margin-left: 6px; }
+        .btn-add { background: #22c55e; color: #fff; border: none; padding: 12px 20px; border-radius: 12px; cursor: pointer; font-weight: 700; font-size: 13px; }
+        .btn-vip { background: #eab308; color: #000; border: none; padding: 12px 20px; border-radius: 12px; cursor: pointer; font-weight: 700; font-size: 13px; }
+        .status-used { color: #f87171; font-weight: 500; } .status-new { color: #4ade80; font-weight: 500; }
+        .box-create { background: #0b0f19; padding: 20px; border-radius: 16px; margin-bottom: 25px; display: flex; gap: 15px; align-items: center; flex-wrap: wrap; border: 1px solid #334155; }
+        .box-create input { padding: 10px 14px; border-radius: 10px; border: 1px solid #475569; background: #1e293b; color: #fff; width: 120px; font-size: 14px; }
+        .toast { position: fixed; bottom: 20px; right: 20px; background: #22c55e; color: white; padding: 12px 20px; border-radius: 10px; font-weight: 600; display: none; box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 1000; }
     </style></head>
-    <body><div class="container">
-        <a href="/admin/logout" class="logout">Đăng xuất</a>
-        <h2>⚙️ Quản Lý Key Bản Quyền & Code VIP (JSONBin.io)</h2>
+    <body>
+    <div class="toast" id="toastMsg">✅ Đã sao chép mã thành công!</div>
+    <div class="container">
+        <div class="header-flex">
+            <h2>⚙️ Quản Lý Key Bản Quyền & Code VIP</h2>
+            <a href="/admin/logout" class="logout">Đăng xuất</a>
+        </div>
         
         <div class="box-create">
-            <label style="font-size: 13px;">Số giờ:</label>
+            <label style="font-size: 13px; font-weight: 600; color: #94a3b8;">Thời hạn (Giờ):</label>
             <input type="number" id="customHours" value="24" min="1">
             <button class="btn-add" onclick="createCustomKey(false)">➕ Tạo Key Thường</button>
             <button class="btn-vip" onclick="createCustomKey(true)">👑 Tạo Code VIP</button>
         </div>
 
-        <table><tr><th>Mã Key / VIP</th><th>Loại</th><th>Thời Hạn</th><th>Trạng Thái & User</th><th>Xóa</th></tr>
+        <table><tr><th>Mã Key / VIP</th><th>Loại</th><th>Thời Hạn</th><th>Trạng Thái & User</th><th>Thao Tác</th></tr>
         {% for k, info in keys.items() %}
         <tr>
             <td><code>{{ k }}</code></td>
             <td>{% if info.get('is_vip') %}<b style="color:#eab308">VIP 👑</b>{% else %}<span style="color:#94a3b8">Thường</span>{% endif %}</td>
             <td><b>{{ info.get('duration_hours', 24) }}h</b></td>
             <td>{% if info.get('status') == 'da_dung' %}<span class="status-used">Đã dùng (ID: {{ info.get('used_by') }})</span>{% else %}<span class="status-new">Chưa dùng</span>{% endif %}</td>
-            <td><a href="/admin/delete?key={{ k }}" class="btn-del" onclick="return confirm('Xóa key này?')">Xóa</a></td>
+            <td>
+                <button class="btn-copy-code" onclick="copyThisKey('{{ k }}')">📋 Sao chép</button>
+                <a href="/admin/delete?key={{ k }}" class="btn-del" onclick="return confirm('Xóa key này?')">Xóa</a>
+            </td>
         </tr>
         {% endfor %}</table></div>
 
     <script>
+    function showToast() {
+        const t = document.getElementById("toastMsg");
+        t.style.display = "block";
+        setTimeout(() => { t.style.display = "none"; }, 2000);
+    }
+    function copyThisKey(code) {
+        navigator.clipboard.writeText(code).then(() => { showToast(); });
+    }
     function createCustomKey(isVip) {
         let hours = document.getElementById("customHours").value;
         fetch("/admin/create_custom_key", {
@@ -261,11 +310,7 @@ def admin_dashboard():
         })
         .then(res => res.json())
         .then(data => {
-            if(data.success) {
-                location.reload();
-            } else {
-                alert("Lỗi: " + data.msg);
-            }
+            if(data.success) { location.reload(); } else { alert("Lỗi: " + data.msg); }
         });
     }
     </script>
@@ -510,10 +555,9 @@ def show_game_menu(chat_id, message_id, game_type):
     
     bet_disp = g_cfg.get('bet_amount_total') if game_type == 'sprint' else g_cfg.get('base_bet')
     
-    # Hiển thị số ván còn lại đếm ngược trực tiếp trên menu
     max_r = g_cfg.get('max_rounds', 100)
     if not cfg.get("is_vip"):
-        max_r = 100  # Key thường ép cứng 100 ván
+        max_r = 100
         g_cfg['max_rounds'] = 100
         
     tot_bets_done = sum(get_account_state(game_type, u)["total_bets"] for u in g_cfg["accounts"])
@@ -803,10 +847,25 @@ def handle_text_messages(message):
         if res.get("status") == "success" and res.get("is_vip"):
             cfg["is_vip"] = True
             cfg["waiting_for_vip_code"] = False
-            bot.send_message(chat_id, "🎉 **Kích hoạt thành công Tính Năng VIP!**", parse_mode="Markdown")
-            show_game_menu(chat_id, message.message_id, cfg.get("active_game", "escape"))
+            
+            def send_and_auto_delete():
+                try:
+                    msg = bot.send_message(chat_id, "🎉 **Kích hoạt thành công Tính Năng VIP!**", parse_mode="Markdown")
+                    time.sleep(3)
+                    bot.delete_message(chat_id, msg.message_id)
+                except: pass
+
+            Thread(target=send_and_auto_delete, daemon=True).start()
+            show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), cfg.get("active_game", "escape"))
         else:
-            bot.send_message(chat_id, "❌ **Code VIP không hợp lệ!**", parse_mode="Markdown")
+            def send_and_auto_delete_err():
+                try:
+                    msg = bot.send_message(chat_id, "❌ **Code VIP không hợp lệ!**", parse_mode="Markdown")
+                    time.sleep(3)
+                    bot.delete_message(chat_id, msg.message_id)
+                except: pass
+
+            Thread(target=send_and_auto_delete_err, daemon=True).start()
         return
 
     game_max_loss = cfg.get("waiting_for_max_losses")
@@ -883,7 +942,6 @@ def handle_text_messages(message):
         try: bot.delete_message(chat_id, message.message_id)
         except: pass
 
-# Hàm hỗ trợ tự động cập nhật giao diện menu đếm ngược số ván real-time
 def update_menu_live(chat_id, game_type):
     cfg = get_user_config(chat_id)
     menu_msg_id = cfg.get("menu_msg_id")
@@ -925,7 +983,7 @@ def update_menu_live(chat_id, game_type):
     except: pass
 
 # ---------------------------------------------------------
-# ENGINE ĐẾM NGƯỢC SỐ VÁN THỰC TẾ TRÊN TELEGRAM
+# ENGINE TỐC ĐỘ: NHẢY PHÒNG SIÊU TỐC (0.000000001s), CƯỢC 60 GIÂY
 # ---------------------------------------------------------
 def run_escape_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)
@@ -971,7 +1029,6 @@ def run_escape_bot_engine(chat_id, uid, skey):
 
         if not check_key_validity(chat_id): break
         
-        # Ép cứng Key thường tối đa 100 ván, VIP có thể tùy chỉnh
         max_r = escape_cfg.get("max_rounds", 100)
         if not cfg.get("is_vip"): max_r = 100
         
@@ -985,14 +1042,12 @@ def run_escape_bot_engine(chat_id, uid, skey):
             rooms = [1, 2, 3, 4, 5, 6, 7, 8]
             room_id = random.choice(rooms)
             
-            # Vào phòng ngẫu nhiên
+            # Nhảy phòng cực tốc chớp nhoáng (0.000000001s)
             session_req.post("https://api.escapemaster.net/escape_game/enter_room",
                              json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id)},
                              headers=get_headers(), timeout=3)
             
-            time.sleep(0.05)
-            
-            # Đặt cược đúng 1 lần duy nhất với base_bet
+            # Đặt cược ngay lập tức sau khi đổi phòng
             amount = float(escape_cfg["base_bet"])
             res = session_req.post("https://api.escapemaster.net/escape_game/bet",
                                    json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id), "bet_amount": amount},
@@ -1001,11 +1056,10 @@ def run_escape_bot_engine(chat_id, uid, skey):
             if res.status_code == 200 and res.json().get("code") == 0:
                 acc_st["total_bets"] += 1
                 acc_st["wins"] += 1
-                # Cập nhật giao diện Telegram đếm lùi số ván ngay lập tức
                 update_menu_live(chat_id, "escape")
         except: pass
         
-        # Nghỉ đúng 60 giây để chờ sang ván mới
+        # Giữ nguyên thời gian cược và chờ vòng mới chuẩn 60 giây
         for _ in range(60):
             if not escape_cfg["global_running"] or acc_st["random_stop"].is_set():
                 break
