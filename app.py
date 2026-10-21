@@ -184,7 +184,7 @@ def api_verify_key():
     keys_db = load_keys()
     
     if key_code not in keys_db:
-        return {"status": "error", "msg": "Key hoặc Mã Code không tồn tại!"}
+        return {"status": "error", "msg": "Mã hoặc Key không tồn tại!"}
         
     k_data = keys_db[key_code]
     duration_secs = int(k_data.get("duration_hours", 24) * 3600)
@@ -972,7 +972,7 @@ def handle_text_messages(message):
         show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_max_rounds_vip)
         return
 
-    # SỬA LỖI: XỬ LÝ NHẬP MÃ VIP ĐÃ ĐỒNG BỘ TRỰC TIẾP LÊN CLOUD VÀ MỞ KHÓA NGAY LẬP TỨC
+    # SỬA TRIỆT ĐỂ: KÍCH HOẠT VIP XONG LÀ TỰ ĐỘNG MỞ MENU CÀI ĐẶT NGAY LẬP TỨC
     if cfg.get("waiting_for_vip_code"):
         try: bot.delete_message(chat_id, message.message_id)
         except: pass
@@ -983,7 +983,7 @@ def handle_text_messages(message):
             cfg["key_expire_at"] = res.get("expire_at", time.time() + 86400)
             cfg["waiting_for_vip_code"] = False
             
-            # Lưu trạng thái đã dùng lên Cloud để Admin quản lý chính xác
+            # Cập nhật trạng thái đã dùng lên Cloud để Admin quản lý chuẩn xác
             keys_db = load_keys()
             if text in keys_db:
                 keys_db[text]["status"] = "da_dung"
@@ -991,15 +991,15 @@ def handle_text_messages(message):
                 keys_db[text]["expire_at"] = cfg["key_expire_at"]
                 save_key_to_cloud(text, keys_db[text])
             
-            def send_and_auto_delete():
+            prompt_id = cfg.get("prompt_msg_id")
+            active_g = cfg.get("active_game", "escape")
+            
+            # Mở thẳng menu cấu hình VIP tại chỗ tin nhắn nhập mã luôn
+            if prompt_id:
                 try:
-                    msg = bot.send_message(chat_id, "🎉 **Kích hoạt thành công Tính Năng VIP!**", parse_mode="Markdown")
-                    time.sleep(3)
-                    bot.delete_message(chat_id, msg.message_id)
-                except: pass
-
-            Thread(target=send_and_auto_delete, daemon=True).start()
-            show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), cfg.get("active_game", "escape"))
+                    show_vip_settings_menu(chat_id, prompt_id, active_g)
+                except:
+                    show_main_menu(chat_id, message.message_id, is_new=True)
         else:
             err_msg = res.get("msg", "Mã Code VIP không hợp lệ hoặc đã được sử dụng!")
             def send_and_auto_delete_err():
