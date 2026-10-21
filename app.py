@@ -75,7 +75,7 @@ def delete_key_from_cloud(key_code):
         pass
 
 # ---------------------------------------------------------
-# FLASK WEB ROUTES (GIAO DIỆN ĐẸP 1 TỶ LẦN + NÚT SAO CHÉP 1 CHẠM)
+# FLASK WEB ROUTES (GIAO DIỆN ĐẸP + NÚT SAO CHÉP 1 CHẠM)
 # ---------------------------------------------------------
 @app.route('/')
 def home():
