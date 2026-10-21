@@ -75,7 +75,7 @@ def delete_key_from_cloud(key_code):
         pass
 
 # ---------------------------------------------------------
-# FLASK WEB ROUTES
+# FLASK WEB ROUTES (CỔNG LẤY KEY & TRANG QUẢN TRỊ ADMIN)
 # ---------------------------------------------------------
 @app.route('/')
 def home():
@@ -882,7 +882,7 @@ def handle_text_messages(message):
         except: pass
 
 # ---------------------------------------------------------
-# ENGINE ĐẦY ĐỦ: CƯỢC ĐÚNG 1 LẦN DUY NHẤT KHI SANG VÁN MỚI
+# ENGINE CHUẨN CHỐNG SPAM: CHỈ CƯỢC 1 LẦN DUY NHẤT KHI SANG VÁN MỚI
 # ---------------------------------------------------------
 def run_escape_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)
@@ -907,6 +907,8 @@ def run_escape_bot_engine(chat_id, uid, skey):
             "Accept": "application/json"
         }
 
+    last_acted_issue = None
+
     while escape_cfg["global_running"] and not acc_st["random_stop"].is_set():
         if escape_cfg.get("max_continuous_losses", 0) > 0 and acc_st["streak_loss"] >= escape_cfg["max_continuous_losses"]:
             escape_cfg["global_running"] = False
@@ -925,7 +927,6 @@ def run_escape_bot_engine(chat_id, uid, skey):
 
         if not check_key_validity(chat_id): break
         
-        # Giới hạn số ván (Mặc định 100 ván, chỉnh vô hạn trong VIP)
         max_r = escape_cfg.get("max_rounds", 100)
         if max_r > 0 and acc_st["total_bets"] >= max_r:
             escape_cfg["global_running"] = False
@@ -933,27 +934,39 @@ def run_escape_bot_engine(chat_id, uid, skey):
             break
 
         try:
-            rooms = [1, 2, 3, 4, 5, 6, 7, 8]
-            room_id = random.choice(rooms)
-            
-            session_req.post("https://api.escapemaster.net/escape_game/enter_room",
-                             json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id)},
-                             headers=get_headers(), timeout=3)
-            
-            time.sleep(0.05)
-            
-            amount = float(escape_cfg["base_bet"])
-            res = session_req.post("https://api.escapemaster.net/escape_game/bet",
-                                   json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id), "bet_amount": amount},
-                                   headers=get_headers(), timeout=3)
-            
-            if res.status_code == 200 and res.json().get("code") == 0:
-                acc_st["total_bets"] += 1
-                acc_st["wins"] += 1
+            # Lấy thông tin ván hiện tại từ API trang chủ để lấy issue_id
+            r = session_req.get(f"https://api.escapemaster.net/escape_game/home?asset_type={escape_cfg['asset_type']}&user_id={int(uid)}", headers=get_headers(), timeout=4)
+            if r.status_code == 200:
+                res_json = r.json()
+                data_block = res_json.get("data", {})
+                current_issue = data_block.get("issue_id") or data_block.get("id")
+                
+                # CHỈ CƯỢC KHI PHÁT HIỆN SANG VÁN MỚI HOÀN TOÀN
+                if current_issue and current_issue != last_acted_issue:
+                    rooms = [1, 2, 3, 4, 5, 6, 7, 8]
+                    room_id = random.choice(rooms)
+                    
+                    # Vào phòng
+                    session_req.post("https://api.escapemaster.net/escape_game/enter_room",
+                                     json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id)},
+                                     headers=get_headers(), timeout=3)
+                    
+                    time.sleep(0.05)
+                    
+                    # Cược đúng 1 lần duy nhất với số tiền base_bet
+                    amount = float(escape_cfg["base_bet"])
+                    res = session_req.post("https://api.escapemaster.net/escape_game/bet",
+                                           json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id), "bet_amount": amount},
+                                           headers=get_headers(), timeout=3)
+                    
+                    if res.status_code == 200 and res.json().get("code") == 0:
+                        acc_st["total_bets"] += 1
+                        acc_st["wins"] += 1
+                        last_acted_issue = current_issue  # Khóa cứng ván này, chờ ván sau mới cược tiếp
         except: pass
         
-        # Nghỉ đủ chu kỳ ván đấu để không bị spam liên tục
-        time.sleep(5)
+        # Thăm dò định kỳ mỗi 2 giây
+        time.sleep(2)
 
 def run_sprint_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)
