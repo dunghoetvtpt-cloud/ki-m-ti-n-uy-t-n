@@ -75,7 +75,7 @@ def delete_key_from_cloud(key_code):
         pass
 
 # ---------------------------------------------------------
-# FLASK WEB ROUTES (GIAO DIỆN SIÊU ĐẸP & TỐI ƯU MOBILE)
+# FLASK WEB ROUTES (GIAO DIỆN LẤY KEY & ADMIN)
 # ---------------------------------------------------------
 @app.route('/')
 def home():
@@ -176,6 +176,7 @@ def claim_key():
     save_key_to_cloud(new_key, key_data)
     return redirect(url_for('home', key=new_key))
 
+# API XÁC THỰC KEY (CHỈ CHO PHÉP NHẬP 1 LẦN DUY NHẤT)
 @app.route('/api/verify_key')
 def api_verify_key():
     key_code = request.args.get('key', '').strip()
@@ -189,10 +190,9 @@ def api_verify_key():
     duration_secs = int(k_data.get("duration_hours", 24) * 3600)
     is_vip = k_data.get("is_vip", False)
     
+    # CHẶN TUYỆT ĐỐI NẾU KEY ĐÃ ĐƯỢC SỬ DỤNG TRƯỚC ĐÓ
     if k_data.get("status") == "da_dung":
-        if str(k_data.get("used_by")) == str(user_id) and time.time() < k_data.get("expire_at", 0):
-            return {"status": "success", "msg": "Key vẫn còn hiệu lực!", "expire_at": k_data["expire_at"], "is_vip": is_vip}
-        return {"status": "error", "msg": "Key đã được sử dụng hoặc hết hạn!"}
+        return {"status": "error", "msg": "Key này đã được sử dụng rồi! Không thể dùng lại."}
         
     k_data["status"] = "da_dung"
     k_data["used_by"] = str(user_id)
@@ -241,6 +241,12 @@ def admin_dashboard():
     if not session.get('admin_logged'): return redirect(url_for('admin_login'))
     keys_db = load_keys()
     now = time.time()
+    
+    # THỐNG KÊ TỔNG QUAN SỐ LƯỢNG NGƯỜI NHẬP
+    total_keys_count = len(keys_db)
+    used_keys_count = sum(1 for k, info in keys_db.items() if info.get('status') == 'da_dung')
+    unused_keys_count = total_keys_count - used_keys_count
+
     html = """
     <!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Quản Lý Key</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -251,6 +257,13 @@ def admin_dashboard():
         .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #334155; padding-bottom: 12px; gap: 10px; flex-wrap: wrap; }
         h2 { color: #38bdf8; font-size: 18px; font-weight: 700; }
         .logout { color: #f87171; text-decoration: none; font-size: 12px; font-weight: 600; background: rgba(239, 68, 68, 0.1); padding: 6px 12px; border-radius: 8px; }
+        
+        /* BOX THỐNG KÊ SỐ LƯỢNG */
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+        .stat-card { background: #0b0f19; border: 1px solid #334155; padding: 15px; border-radius: 14px; text-align: center; }
+        .stat-card h4 { font-size: 12px; color: #94a3b8; margin-bottom: 5px; font-weight: 600; }
+        .stat-card span { font-size: 20px; font-weight: 800; color: #38bdf8; }
+        
         .table-responsive { width: 100%; overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; min-width: 650px; }
         th, td { padding: 10px; border-bottom: 1px solid #334155; text-align: left; vertical-align: middle; }
@@ -263,7 +276,7 @@ def admin_dashboard():
         .btn-vip { background: #eab308; color: #000; border: none; padding: 10px 16px; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 12px; }
         .status-used { color: #f87171; font-weight: 500; } .status-new { color: #4ade80; font-weight: 500; }
         .box-create { background: #0b0f19; padding: 15px; border-radius: 14px; margin-bottom: 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; border: 1px solid #334155; }
-        .box-create input { padding: 8px 12px; border-radius: 8px; border: 1px solid #475569; background: #1e293b; color: #fff; width: 100px; font-size: 13px; }
+        .box-create input { padding: 8px 12px; border-radius: 8px; border: 1px solid #475569; background: #1e293b; color: #fff; width: 85px; font-size: 13px; text-align: center; }
         .input-time { padding: 6px; border-radius: 6px; border: 1px solid #475569; background: #1e293b; color: #fff; width: 75px; text-align: center; font-size: 12px; }
         .toast { position: fixed; bottom: 20px; right: 20px; background: #22c55e; color: white; padding: 10px 16px; border-radius: 8px; font-weight: 600; display: none; box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 1000; font-size: 13px; }
     </style></head>
@@ -275,11 +288,36 @@ def admin_dashboard():
             <a href="/admin/logout" class="logout">Đăng xuất</a>
         </div>
         
+        <!-- HIỂN THỊ SỐ LƯỢNG NGƯỜI ĐÃ NHẬP VÀ CHECK TỔNG QUAN -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h4>📊 Tổng số lượng Key</h4>
+                <span>{{ total_keys_count }}</span>
+            </div>
+            <div class="stat-card">
+                <h4>👤 Đã có người nhập</h4>
+                <span style="color: #f87171;">{{ used_keys_count }}</span>
+            </div>
+            <div class="stat-card">
+                <h4>🟢 Chưa có ai nhập</h4>
+                <span style="color: #4ade80;">{{ unused_keys_count }}</span>
+            </div>
+        </div>
+
+        <!-- BẢNG TẠO KEY (HỖ TRỢ NHẬP SỐ LƯỢNG TÙY Ý) -->
         <div class="box-create">
-            <label style="font-size: 12px; font-weight: 600; color: #94a3b8;">Thời hạn (Giờ):</label>
-            <input type="number" id="customHours" value="24" min="1">
-            <button class="btn-add" onclick="createCustomKey(false)">➕ Tạo Key Thường</button>
-            <button class="btn-vip" onclick="createCustomKey(true)">👑 Tạo Code VIP</button>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+                <label style="font-size: 11px; font-weight: 600; color: #94a3b8;">Thời hạn (Giờ):</label>
+                <input type="number" id="customHours" value="24" min="1">
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+                <label style="font-size: 11px; font-weight: 600; color: #94a3b8;">Số lượng:</label>
+                <input type="number" id="customQty" value="1" min="1" max="100">
+            </div>
+            <div style="display: flex; gap: 8px; margin-top: 16px;">
+                <button class="btn-add" onclick="createCustomKey(false)">➕ Tạo Key Thường</button>
+                <button class="btn-vip" onclick="createCustomKey(true)">👑 Tạo Code VIP</button>
+            </div>
         </div>
 
         <div class="table-responsive">
@@ -287,8 +325,8 @@ def admin_dashboard():
                 <tr>
                     <th>Mã Key / VIP</th>
                     <th>Loại</th>
-                    <th>Cài Giờ Hạn Mới (Tiếng)</th>
-                    <th>Trạng Thái & Còn Lại</th>
+                    <th>Cài Giờ Hạn (Tiếng)</th>
+                    <th>Trạng Thái & Số Lượng Người Nhập</th>
                     <th>Thao Tác</th>
                 </tr>
                 {% for k, info in keys.items() %}
@@ -307,10 +345,10 @@ def admin_dashboard():
                     </td>
                     <td>
                         {% if info.get('status') == 'da_dung' %}
-                            <span class="status-used">ID: {{ info.get('used_by') }}</span><br>
+                            <span class="status-used">👤 Đã có 1 người nhập (ID: {{ info.get('used_by') }})</span><br>
                             <small style="color: #38bdf8;">⏳ Còn: {{ rem_h }}h {{ rem_m }}p</small>
                         {% else %}
-                            <span class="status-new">Chưa dùng</span>
+                            <span class="status-new">🟢 Chưa có ai nhập (0/1)</span>
                         {% endif %}
                     </td>
                     <td>
@@ -337,10 +375,11 @@ def admin_dashboard():
     }
     function createCustomKey(isVip) {
         let hours = document.getElementById("customHours").value;
+        let qty = document.getElementById("customQty").value;
         fetch("/admin/create_custom_key", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ hours: hours, is_vip: isVip })
+            body: JSON.stringify({ hours: hours, quantity: qty, is_vip: isVip })
         })
         .then(res => res.json())
         .then(data => {
@@ -357,7 +396,7 @@ def admin_dashboard():
         .then(res => res.json())
         .then(data => {
             if(data.success) {
-                showToast("✅ Đã gia hạn thời gian!");
+                showToast("✅ Đã cập nhật thời gian!");
                 setTimeout(() => { location.reload(); }, 1000);
             } else {
                 alert("Lỗi: " + data.msg);
@@ -367,8 +406,9 @@ def admin_dashboard():
     </script>
     </body></html>
     """
-    return render_template_string(html, keys=keys_db, now=now)
+    return render_template_string(html, keys=keys_db, now=now, total_keys_count=total_keys_count, used_keys_count=used_keys_count, unused_keys_count=unused_keys_count)
 
+# API TẠO HÀNG LOẠT KEY THEO SỐ LƯỢNG
 @app.route('/admin/create_custom_key', methods=['POST'])
 def admin_create_custom_key():
     if not session.get('admin_logged'): 
@@ -376,21 +416,28 @@ def admin_create_custom_key():
     try:
         req_data = request.json or {}
         hours = float(req_data.get("hours", 24))
+        quantity = int(req_data.get("quantity", 1))
         is_vip = bool(req_data.get("is_vip", False))
         
         prefix = "VIP-" if is_vip else "ADMIN-"
-        new_key = prefix + ''.join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=8))
+        keys_db = load_keys()
         
-        key_data = {
-            "status": "chua_dung",
-            "used_by": None,
-            "created_at": time.time(),
-            "expire_at": None,
-            "duration_hours": hours,
-            "is_vip": is_vip
-        }
-        save_key_to_cloud(new_key, key_data)
-        return jsonify({"success": True, "key": new_key})
+        for _ in range(quantity):
+            new_key = prefix + ''.join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=8))
+            keys_db[new_key] = {
+                "status": "chua_dung",
+                "used_by": None,
+                "created_at": time.time(),
+                "expire_at": None,
+                "duration_hours": hours,
+                "is_vip": is_vip
+            }
+            
+        url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}"
+        headers = {"Content-Type": "application/json", "X-Master-Key": JSONBIN_API_KEY}
+        requests.put(url, json={"keys": keys_db}, headers=headers, timeout=5)
+        
+        return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "msg": str(e)})
 
@@ -410,14 +457,12 @@ def admin_update_key_time():
         k_data = keys_db[key_code]
         k_data["duration_hours"] = new_hours
         
-        # Cập nhật mốc thời gian hết hạn mới tính từ mốc hiện tại
         if k_data.get("status") == "da_dung":
             now = time.time()
             current_expire = k_data.get("expire_at", now)
             base_time = max(now, current_expire)
             k_data["expire_at"] = base_time + (new_hours * 3600)
             
-            # Đồng bộ trực tiếp RAM nếu người dùng đang dùng Telegram Bot
             used_user_id = str(k_data.get("used_by"))
             for cid, ucfg in user_data.items():
                 if str(cid) == used_user_id:
@@ -509,7 +554,6 @@ def check_key_validity(chat_id):
     cfg = get_user_config(chat_id)
     keys_db = load_keys()
     
-    # Kiểm tra đồng bộ từ Cloud về RAM liên tục
     for k, info in keys_db.items():
         if str(info.get("used_by")) == str(chat_id):
             expire_at = info.get("expire_at", 0)
@@ -951,9 +995,10 @@ def handle_text_messages(message):
             Thread(target=send_and_auto_delete, daemon=True).start()
             show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), cfg.get("active_game", "escape"))
         else:
+            err_msg = res.get("msg", "Mã Code không hợp lệ hoặc đã được sử dụng!")
             def send_and_auto_delete_err():
                 try:
-                    msg = bot.send_message(chat_id, "❌ **Code VIP không hợp lệ!**", parse_mode="Markdown")
+                    msg = bot.send_message(chat_id, f"❌ **{err_msg}**", parse_mode="Markdown")
                     time.sleep(3)
                     bot.delete_message(chat_id, msg.message_id)
                 except: pass
@@ -1001,13 +1046,14 @@ def handle_text_messages(message):
             bot.send_message(chat_id, "✅ **Kích hoạt Key thành công!**", parse_mode="Markdown")
             show_main_menu(chat_id, message.message_id, is_new=True)
         else:
+            err_msg = res.get("msg", "Key không hợp lệ hoặc đã được sử dụng!")
             web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
             markup = types.InlineKeyboardMarkup()
             markup.add(
                 types.InlineKeyboardButton("🌐 Lấy Key Mới (24h)", url=web_url),
                 types.InlineKeyboardButton("🔑 Nhập Lại Key", callback_data="btn_nhap_key")
             )
-            bot.send_message(chat_id, f"❌ Key `{text}` không hợp lệ!", reply_markup=markup, parse_mode="Markdown")
+            bot.send_message(chat_id, f"❌ **{err_msg}**", reply_markup=markup, parse_mode="Markdown")
         return
 
     game_target_link = cfg.get("waiting_for_link")
@@ -1136,12 +1182,10 @@ def run_escape_bot_engine(chat_id, uid, skey):
             rooms = [1, 2, 3, 4, 5, 6, 7, 8]
             room_id = random.choice(rooms)
             
-            # Nhảy phòng cực tốc chớp nhoáng
             session_req.post("https://api.escapemaster.net/escape_game/enter_room",
                              json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id)},
                              headers=get_headers(), timeout=3)
             
-            # Đặt cược ngay lập tức sau khi đổi phòng
             amount = float(escape_cfg["base_bet"])
             res = session_req.post("https://api.escapemaster.net/escape_game/bet",
                                    json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id), "bet_amount": amount},
@@ -1153,7 +1197,6 @@ def run_escape_bot_engine(chat_id, uid, skey):
                 update_menu_live(chat_id, "escape")
         except: pass
         
-        # Giữ nguyên thời gian cược và chờ vòng mới chuẩn 60 giây
         for _ in range(60):
             if not escape_cfg["global_running"] or acc_st["random_stop"].is_set():
                 break
