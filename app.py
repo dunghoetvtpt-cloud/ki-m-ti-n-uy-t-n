@@ -287,7 +287,7 @@ def admin_dashboard():
                 <tr>
                     <th>Mã Key / VIP</th>
                     <th>Loại</th>
-                    <th>Thời Hạn (Sửa / Thêm Giờ)</th>
+                    <th>Cài Giờ Hạn Mới (Tiếng)</th>
                     <th>Trạng Thái & Còn Lại</th>
                     <th>Thao Tác</th>
                 </tr>
@@ -357,7 +357,7 @@ def admin_dashboard():
         .then(res => res.json())
         .then(data => {
             if(data.success) {
-                showToast("✅ Đã cập nhật thời gian!");
+                showToast("✅ Đã gia hạn thời gian!");
                 setTimeout(() => { location.reload(); }, 1000);
             } else {
                 alert("Lỗi: " + data.msg);
@@ -410,11 +410,20 @@ def admin_update_key_time():
         k_data = keys_db[key_code]
         k_data["duration_hours"] = new_hours
         
-        if k_data.get("status") == "da_dung" and k_data.get("expire_at"):
-            current_expire = k_data["expire_at"]
+        # Cập nhật mốc thời gian hết hạn mới tính từ mốc hiện tại
+        if k_data.get("status") == "da_dung":
             now = time.time()
+            current_expire = k_data.get("expire_at", now)
             base_time = max(now, current_expire)
             k_data["expire_at"] = base_time + (new_hours * 3600)
+            
+            # Đồng bộ trực tiếp RAM nếu người dùng đang dùng Telegram Bot
+            used_user_id = str(k_data.get("used_by"))
+            for cid, ucfg in user_data.items():
+                if str(cid) == used_user_id:
+                    ucfg["key_expire_at"] = k_data["expire_at"]
+                    ucfg["has_valid_key"] = True
+                    session_manager.save_session_to_file(cid, k_data["expire_at"])
             
         save_key_to_cloud(key_code, k_data)
         return jsonify({"success": True})
@@ -498,9 +507,9 @@ def verify_key_with_server(key_code, user_id):
 
 def check_key_validity(chat_id):
     cfg = get_user_config(chat_id)
-    if cfg["has_valid_key"] and time.time() < cfg.get("key_expire_at", 0):
-        return True
     keys_db = load_keys()
+    
+    # Kiểm tra đồng bộ từ Cloud về RAM liên tục
     for k, info in keys_db.items():
         if str(info.get("used_by")) == str(chat_id):
             expire_at = info.get("expire_at", 0)
@@ -510,6 +519,10 @@ def check_key_validity(chat_id):
                 cfg["is_vip"] = info.get("is_vip", False)
                 session_manager.save_session_to_file(chat_id, expire_at)
                 return True
+                
+    if cfg["has_valid_key"] and time.time() < cfg.get("key_expire_at", 0):
+        return True
+        
     cfg["has_valid_key"] = False
     cfg["escape"]["global_running"] = False
     cfg["sprint"]["global_running"] = False
@@ -575,6 +588,7 @@ def callback_back_start(call):
 
 def show_main_menu(chat_id, message_id, is_new=False):
     cfg = get_user_config(chat_id)
+    check_key_validity(chat_id)
     reset_user_wait_flags(cfg)
     remaining_sec = int(cfg.get("key_expire_at", 0) - time.time())
     h = max(0, remaining_sec // 3600)
@@ -623,6 +637,7 @@ def callback_select_game(call):
 
 def show_game_menu(chat_id, message_id, game_type):
     cfg = get_user_config(chat_id)
+    check_key_validity(chat_id)
     reset_user_wait_flags(cfg)
     g_cfg = cfg[game_type]
     game_name = GAME_NAMES_VI.get(game_type, "Game")
@@ -1022,6 +1037,7 @@ def handle_text_messages(message):
 
 def update_menu_live(chat_id, game_type):
     cfg = get_user_config(chat_id)
+    check_key_validity(chat_id)
     menu_msg_id = cfg.get("menu_msg_id")
     if not menu_msg_id: return
     try:
