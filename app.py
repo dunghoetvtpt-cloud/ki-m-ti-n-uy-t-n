@@ -882,7 +882,7 @@ def handle_text_messages(message):
         except: pass
 
 # ---------------------------------------------------------
-# ENGINE CHUẨN CHỐNG SPAM: CHỈ CƯỢC 1 LẦN DUY NHẤT KHI SANG VÁN MỚI
+# ENGINE CHUẨN: CHẠY ĐÚNG CHU KỲ 60 GIÂY / 1 LỆNH CƯỢC DUY NHẤT
 # ---------------------------------------------------------
 def run_escape_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)
@@ -906,8 +906,6 @@ def run_escape_bot_engine(chat_id, uid, skey):
             "User-Secret-Key": skey,
             "Accept": "application/json"
         }
-
-    last_acted_issue = None
 
     while escape_cfg["global_running"] and not acc_st["random_stop"].is_set():
         if escape_cfg.get("max_continuous_losses", 0) > 0 and acc_st["streak_loss"] >= escape_cfg["max_continuous_losses"]:
@@ -934,39 +932,32 @@ def run_escape_bot_engine(chat_id, uid, skey):
             break
 
         try:
-            # Lấy thông tin ván hiện tại từ API trang chủ để lấy issue_id
-            r = session_req.get(f"https://api.escapemaster.net/escape_game/home?asset_type={escape_cfg['asset_type']}&user_id={int(uid)}", headers=get_headers(), timeout=4)
-            if r.status_code == 200:
-                res_json = r.json()
-                data_block = res_json.get("data", {})
-                current_issue = data_block.get("issue_id") or data_block.get("id")
-                
-                # CHỈ CƯỢC KHI PHÁT HIỆN SANG VÁN MỚI HOÀN TOÀN
-                if current_issue and current_issue != last_acted_issue:
-                    rooms = [1, 2, 3, 4, 5, 6, 7, 8]
-                    room_id = random.choice(rooms)
-                    
-                    # Vào phòng
-                    session_req.post("https://api.escapemaster.net/escape_game/enter_room",
-                                     json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id)},
-                                     headers=get_headers(), timeout=3)
-                    
-                    time.sleep(0.05)
-                    
-                    # Cược đúng 1 lần duy nhất với số tiền base_bet
-                    amount = float(escape_cfg["base_bet"])
-                    res = session_req.post("https://api.escapemaster.net/escape_game/bet",
-                                           json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id), "bet_amount": amount},
-                                           headers=get_headers(), timeout=3)
-                    
-                    if res.status_code == 200 and res.json().get("code") == 0:
-                        acc_st["total_bets"] += 1
-                        acc_st["wins"] += 1
-                        last_acted_issue = current_issue  # Khóa cứng ván này, chờ ván sau mới cược tiếp
+            rooms = [1, 2, 3, 4, 5, 6, 7, 8]
+            room_id = random.choice(rooms)
+            
+            # Vào phòng ngẫu nhiên
+            session_req.post("https://api.escapemaster.net/escape_game/enter_room",
+                             json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id)},
+                             headers=get_headers(), timeout=3)
+            
+            time.sleep(0.05)
+            
+            # Đặt cược đúng 1 lần duy nhất với base_bet
+            amount = float(escape_cfg["base_bet"])
+            res = session_req.post("https://api.escapemaster.net/escape_game/bet",
+                                   json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id), "bet_amount": amount},
+                                   headers=get_headers(), timeout=3)
+            
+            if res.status_code == 200 and res.json().get("code") == 0:
+                acc_st["total_bets"] += 1
+                acc_st["wins"] += 1
         except: pass
         
-        # Thăm dò định kỳ mỗi 2 giây
-        time.sleep(2)
+        # Nghỉ đúng 60 giây để chờ sang ván mới
+        for _ in range(60):
+            if not escape_cfg["global_running"] or acc_st["random_stop"].is_set():
+                break
+            time.sleep(1)
 
 def run_sprint_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)
