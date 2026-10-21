@@ -176,7 +176,7 @@ def claim_key():
     save_key_to_cloud(new_key, key_data)
     return redirect(url_for('home', key=new_key))
 
-# API XÁC THỰC KEY (CHỈ CHO PHÉP NHẬP 1 LẦN DUY NHẤT)
+# API XÁC THỰC KEY THƯỜNG
 @app.route('/api/verify_key')
 def api_verify_key():
     key_code = request.args.get('key', '').strip()
@@ -190,7 +190,6 @@ def api_verify_key():
     duration_secs = int(k_data.get("duration_hours", 24) * 3600)
     is_vip = k_data.get("is_vip", False)
     
-    # CHẶN TUYỆT ĐỐI NẾU KEY ĐÃ ĐƯỢC SỬ DỤNG TRƯỚC ĐÓ
     if k_data.get("status") == "da_dung":
         return {"status": "error", "msg": "Mã này đã được sử dụng rồi! Không thể dùng lại."}
         
@@ -972,43 +971,53 @@ def handle_text_messages(message):
         show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_max_rounds_vip)
         return
 
-    # XỬ LÝ NHẬP MÃ VIP: XÓA KHUNG CHAT CŨ VÀ MỞ THẲNG MENU CẤU HÌNH VIP
+    # XỬ LÝ NHẬP MÃ VIP TRỰC TIẾP TRÊN CLOUD (CHẮC CHẮN MỞ ĐƯỢC MENU)
     if cfg.get("waiting_for_vip_code"):
         try: bot.delete_message(chat_id, message.message_id)
         except: pass
         
-        res = verify_key_with_server(text, str(chat_id))
-        if res.get("status") == "success" and res.get("is_vip"):
-            cfg["is_vip"] = True
-            cfg["has_valid_key"] = True
-            cfg["key_expire_at"] = res.get("expire_at", time.time() + 86400)
-            cfg["waiting_for_vip_code"] = False
-            
-            keys_db = load_keys()
-            if text in keys_db:
-                keys_db[text]["status"] = "da_dung"
-                keys_db[text]["used_by"] = str(chat_id)
-                keys_db[text]["expire_at"] = cfg["key_expire_at"]
-                save_key_to_cloud(text, keys_db[text])
-            
-            prompt_id = cfg.get("prompt_msg_id")
-            active_g = cfg.get("active_game", "escape")
-            
-            if prompt_id:
-                try:
-                    show_vip_settings_menu(chat_id, prompt_id, active_g)
-                except:
-                    show_main_menu(chat_id, message.message_id, is_new=True)
+        keys_db = load_keys()
+        key_code = text
+        
+        if key_code in keys_db:
+            k_data = keys_db[key_code]
+            if k_data.get("status") == "da_dung":
+                err_msg = "Mã Code VIP này đã được sử dụng rồi!"
+            else:
+                duration_secs = int(k_data.get("duration_hours", 24) * 3600)
+                expire_time = time.time() + duration_secs
+                
+                k_data["status"] = "da_dung"
+                k_data["used_by"] = str(chat_id)
+                k_data["expire_at"] = expire_time
+                k_data["is_vip"] = True
+                save_key_to_cloud(key_code, k_data)
+                
+                cfg["is_vip"] = True
+                cfg["has_valid_key"] = True
+                cfg["key_expire_at"] = expire_time
+                cfg["waiting_for_vip_code"] = False
+                
+                prompt_id = cfg.get("prompt_msg_id")
+                active_g = cfg.get("active_game", "escape")
+                
+                if prompt_id:
+                    try:
+                        show_vip_settings_menu(chat_id, prompt_id, active_g)
+                    except:
+                        show_main_menu(chat_id, message.message_id, is_new=True)
+                return
         else:
-            err_msg = res.get("msg", "Mã Code VIP không hợp lệ hoặc đã được sử dụng!")
-            def send_and_auto_delete_err():
-                try:
-                    msg = bot.send_message(chat_id, f"❌ **{err_msg}**", parse_mode="Markdown")
-                    time.sleep(3)
-                    bot.delete_message(chat_id, msg.message_id)
-                except: pass
+            err_msg = "Mã Code VIP không tồn tại trên hệ thống!"
 
-            Thread(target=send_and_auto_delete_err, daemon=True).start()
+        def send_and_auto_delete_err():
+            try:
+                msg = bot.send_message(chat_id, f"❌ **{err_msg}**", parse_mode="Markdown")
+                time.sleep(3)
+                bot.delete_message(chat_id, msg.message_id)
+            except: pass
+
+        Thread(target=send_and_auto_delete_err, daemon=True).start()
         return
 
     game_max_loss = cfg.get("waiting_for_max_losses")
