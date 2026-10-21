@@ -31,7 +31,6 @@ JSONBIN_BIN_ID = os.environ.get("JSONBIN_BIN_ID", "")
 JSONBIN_API_KEY = os.environ.get("JSONBIN_API_KEY", "")
 
 def load_keys():
-    """Lấy danh sách Key từ JSONBin"""
     if not JSONBIN_BIN_ID or not JSONBIN_API_KEY: 
         return {}
     try:
@@ -45,7 +44,6 @@ def load_keys():
     return {}
 
 def save_key_to_cloud(key_code, data):
-    """Lưu hoặc cập nhật thông tin Key lên JSONBin"""
     if not JSONBIN_BIN_ID or not JSONBIN_API_KEY:
         return
     try:
@@ -65,7 +63,6 @@ def save_key_to_cloud(key_code, data):
         pass
 
 def delete_key_from_cloud(key_code):
-    """Xóa Key khỏi JSONBin"""
     if not JSONBIN_BIN_ID or not JSONBIN_API_KEY: return
     try:
         keys_db = load_keys()
@@ -78,7 +75,7 @@ def delete_key_from_cloud(key_code):
         pass
 
 # ---------------------------------------------------------
-# FLASK WEB ROUTES (CỔNG LẤY KEY & TRANG QUẢN TRỊ ADMIN)
+# FLASK WEB ROUTES
 # ---------------------------------------------------------
 @app.route('/')
 def home():
@@ -333,18 +330,18 @@ def get_user_config(chat_id):
         if chat_id not in user_data:
             user_data[chat_id] = {
                 "active_game": None, "waiting_for_link": None, "waiting_for_bet": None,
-                "waiting_for_rounds": None, "waiting_for_key": False, "waiting_for_vip_code": False,
-                "waiting_for_max_losses": None, "waiting_for_stop_loss": None, "waiting_for_take_profit": None,
+                "waiting_for_key": False, "waiting_for_vip_code": False, "waiting_for_max_losses": None,
+                "waiting_for_stop_loss": None, "waiting_for_take_profit": None, "waiting_for_max_rounds_vip": None,
                 "is_vip": False, "has_valid_key": is_valid, "key_expire_at": expire_time, "prompt_msg_id": None,
                 "escape": {
                     "accounts": {}, "global_running": False, "asset_type": "BUILD", 
-                    "base_bet": 1.0, "max_rounds": 0, "killer_stats": {i: 0 for i in range(1, 9)},
+                    "base_bet": 1.0, "max_rounds": 100, "killer_stats": {i: 0 for i in range(1, 9)},
                     "selected_uids": [],
                     "max_continuous_losses": 0, "stop_loss_amount": 0.0, "take_profit_amount": 0.0
                 },
                 "sprint": {
                     "accounts": {}, "global_running": False, "asset_type": "BUILD", 
-                    "bet_amount_total": "1", "max_rounds": 0, "lose_limit": 3, 
+                    "bet_amount_total": "1", "max_rounds": 100, "lose_limit": 3, 
                     "rest_rounds": 1, 
                     "selected_uids": [],
                     "max_continuous_losses": 0, "stop_loss_amount": 0.0, "take_profit_amount": 0.0
@@ -398,10 +395,10 @@ def check_key_validity(chat_id):
 def reset_user_wait_flags(cfg):
     cfg["waiting_for_link"] = None
     cfg["waiting_for_bet"] = None
-    cfg["waiting_for_rounds"] = None
     cfg["waiting_for_max_losses"] = None
     cfg["waiting_for_stop_loss"] = None
     cfg["waiting_for_take_profit"] = None
+    cfg["waiting_for_max_rounds_vip"] = None
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -508,7 +505,7 @@ def show_game_menu(chat_id, message_id, game_type):
     selected_str = f"{selected_count} nick" if selected_count > 0 else f"Tất cả ({total_accs})"
     
     bet_disp = g_cfg.get('bet_amount_total') if game_type == 'sprint' else g_cfg.get('base_bet')
-    rounds_disp = g_cfg.get('max_rounds', 0)
+    rounds_disp = g_cfg.get('max_rounds', 100)
     rounds_str = f"{rounds_disp} ván" if rounds_disp > 0 else "Vô hạn"
     
     vip_btn_text = "👑 Cấu Hình VIP ✨" if cfg.get("is_vip") else "👑 Tính Năng VIP 🔒"
@@ -516,7 +513,7 @@ def show_game_menu(chat_id, message_id, game_type):
     h = max(0, remaining_sec // 3600)
     m = max(0, (remaining_sec % 3600) // 60)
     
-    msg_text = f"🎮 *{game_name.upper()}* | Key: `{h}h {m}p`\nTrạng thái: {status_str} | Chạy: `{selected_str}` / Tổng: `{total_accs}/1`\nCược: `{bet_disp}` | Giới hạn: `{rounds_str}`"
+    msg_text = f"🎮 *{game_name.upper()}* | Key: `{h}h {m}p`\nTrạng thái: {status_str} | Chạy: `{selected_str}` / Tổng: `{total_accs}/1`\nCược: `{bet_disp}` | Giới hạn số ván: `{rounds_str}`"
     
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
@@ -525,7 +522,6 @@ def show_game_menu(chat_id, message_id, game_type):
         types.InlineKeyboardButton("🚀 Bật/Tắt Bot", callback_data=f"game_{game_type}_toggle_bot"),
         types.InlineKeyboardButton(f"🪙 Coin ({g_cfg['asset_type']})", callback_data=f"game_{game_type}_toggle_asset"),
         types.InlineKeyboardButton("✏️ Sửa Cược", callback_data=f"game_{game_type}_input_bet"),
-        types.InlineKeyboardButton("🔢 Sửa Số Ván", callback_data=f"game_{game_type}_input_rounds"),
         types.InlineKeyboardButton(vip_btn_text, callback_data=f"game_{game_type}_vip_menu"),
         types.InlineKeyboardButton("📊 Thống Kê", callback_data=f"game_{game_type}_status"),
         types.InlineKeyboardButton("🔙 Quay lại", callback_data="back_to_main")
@@ -599,11 +595,21 @@ def callback_game_actions(call):
         if not cfg.get("is_vip"):
             cfg["waiting_for_vip_code"] = True
             cfg["prompt_msg_id"] = call.message.message_id
-            msg_vip = "👑 **TÍNH NĂNG VIP BỊ KHÓA** 🔒\n━━━━━━━━━━━━━━━━━━━\n✨ *Tính năng bao gồm:*\n• 🛑 Tự dừng khi thua liên tiếp X ván\n• 📉 Tự ngắt khi chạm ngưỡng Cắt Lỗ\n• 🎯 Tự ngắt khi đạt mục tiêu Chốt Lời\n\n👉 **Vui lòng nhập Mã Code VIP để mở khóa:**"
+            msg_vip = "👑 **TÍNH NĂNG VIP BỊ KHÓA** 🔒\n━━━━━━━━━━━━━━━━━━━\n✨ *Tính năng VIP bao gồm:*\n• 🔢 Thay đổi giới hạn số ván (Vô hạn hoặc tùy chọn)\n• 🛑 Tự dừng khi thua liên tiếp X ván\n• 📉 Tự ngắt khi chạm ngưỡng Cắt Lỗ\n• 🎯 Tự ngắt khi đạt mục tiêu Chốt Lời\n\n👉 **Vui lòng nhập Mã Code VIP để mở khóa:**"
             try: bot.edit_message_text(msg_vip, chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
             except: pass
         else:
             show_vip_settings_menu(chat_id, call.message.message_id, game_type)
+
+    elif action == "vip_set_max_rounds":
+        if not cfg.get("is_vip"):
+            try: bot.answer_callback_query(call.id, "⚠️ Tính năng yêu cầu VIP!", show_alert=True)
+            except: pass
+            return
+        cfg["waiting_for_max_rounds_vip"] = game_type
+        cfg["prompt_msg_id"] = call.message.message_id
+        try: bot.edit_message_text(f"🔢 **Nhập số ván muốn cược (Nhập `0` để chạy vô hạn):**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
+        except: pass
 
     elif action == "vip_set_max_losses":
         cfg["waiting_for_max_losses"] = game_type
@@ -655,14 +661,6 @@ def callback_game_actions(call):
         try:
             bot.answer_callback_query(call.id)
             bot.edit_message_text(f"✏️ **Nhập số tiền cược cho [ {game_name_vi} ]:**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
-        except: pass
-    elif action == "input_rounds":
-        reset_user_wait_flags(cfg)
-        cfg["waiting_for_rounds"] = game_type
-        cfg["prompt_msg_id"] = call.message.message_id
-        try:
-            bot.answer_callback_query(call.id)
-            bot.edit_message_text(f"🔢 **Nhập số ván muốn cược (Nhập `0` nếu muốn chạy vô hạn):**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
         except: pass
     elif action == "toggle_bot":
         if not check_key_validity(chat_id):
@@ -731,17 +729,20 @@ def show_vip_settings_menu(chat_id, message_id, game_type):
     cfg = get_user_config(chat_id)
     g_cfg = cfg[game_type]
     game_name = GAME_NAMES_VI.get(game_type, "Game")
+    max_rounds = g_cfg.get("max_rounds", 100)
     max_losses = g_cfg.get("max_continuous_losses", 0)
     stop_loss = g_cfg.get("stop_loss_amount", 0.0)
     take_profit = g_cfg.get("take_profit_amount", 0.0)
     
+    rounds_str = f"{max_rounds} ván" if max_rounds > 0 else "Vô hạn"
     losses_str = f"{max_losses} ván" if max_losses > 0 else "Tắt"
     stop_loss_str = f"-{stop_loss} {g_cfg['asset_type']}" if stop_loss > 0 else "Tắt"
     take_profit_str = f"+{take_profit} {g_cfg['asset_type']}" if take_profit > 0 else "Tắt"
     
-    msg_text = f"👑 *CẤU HÌNH QUẢN TRỊ VIP ({game_name.upper()})*\n━━━━━━━━━━━━━━━━━━━\n🛑 Dừng khi thua liên tiếp: `{losses_str}`\n📉 Dừng khi Cắt Lỗ: `{stop_loss_str}`\n🎯 Dừng khi Chốt Lời: `{take_profit_str}`\n"
+    msg_text = f"👑 *CẤU HÌNH QUẢN TRỊ VIP ({game_name.upper()})*\n━━━━━━━━━━━━━━━━━━━\n🔢 Giới hạn số ván: `{rounds_str}`\n🛑 Dừng khi thua liên tiếp: `{losses_str}`\n📉 Dừng khi Cắt Lỗ: `{stop_loss_str}`\n🎯 Dừng khi Chốt Lời: `{take_profit_str}`\n"
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
+        types.InlineKeyboardButton("🔢 Đổi Giới Hạn Số Ván", callback_data=f"game_{game_type}_vip_set_max_rounds"),
         types.InlineKeyboardButton("🛑 Cài Thua Liên Tiếp", callback_data=f"game_{game_type}_vip_set_max_losses"),
         types.InlineKeyboardButton("📉 Cài Giới Hạn Cắt Lỗ", callback_data=f"game_{game_type}_vip_set_stop_loss"),
         types.InlineKeyboardButton("🎯 Cài Mục Tiêu Chốt Lời", callback_data=f"game_{game_type}_vip_set_take_profit"),
@@ -783,6 +784,15 @@ def handle_text_messages(message):
         except:
             bot.send_message(chat_id, "⚠️ Vui lòng chỉ nhập số tiền cược hợp lệ!")
             return
+
+    game_max_rounds_vip = cfg.get("waiting_for_max_rounds_vip")
+    if game_max_rounds_vip:
+        try: bot.delete_message(chat_id, message.message_id); val = int(text)
+        except: val = 100
+        cfg[game_max_rounds_vip]["max_rounds"] = val
+        cfg["waiting_for_max_rounds_vip"] = None
+        show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_max_rounds_vip)
+        return
 
     if cfg.get("waiting_for_vip_code"):
         try: bot.delete_message(chat_id, message.message_id)
@@ -867,27 +877,12 @@ def handle_text_messages(message):
             except: pass
         return
 
-    game_target_rounds = cfg.get("waiting_for_rounds")
-    if game_target_rounds:
-        try: bot.delete_message(chat_id, message.message_id)
-        except: pass
-        prompt_id = cfg.get("prompt_msg_id")
-        try:
-            val = int(text)
-            if val < 0: raise ValueError()
-            g_cfg = cfg[game_target_rounds]
-            g_cfg["max_rounds"] = val
-            cfg["waiting_for_rounds"] = None
-            show_game_menu(chat_id, prompt_id, game_target_rounds)
-            return
-        except: pass
-
     if not text.startswith("/"):
         try: bot.delete_message(chat_id, message.message_id)
         except: pass
 
 # ---------------------------------------------------------
-# ENGINE ĐẦY ĐỦ TOÀN DIỆN - CHẠY ỔN ĐỊNH 24/7
+# ENGINE ĐẦY ĐỦ: CƯỢC ĐÚNG 1 LẦN DUY NHẤT KHI SANG VÁN MỚI
 # ---------------------------------------------------------
 def run_escape_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)
@@ -929,13 +924,18 @@ def run_escape_bot_engine(chat_id, uid, skey):
             break
 
         if not check_key_validity(chat_id): break
-        if escape_cfg.get("max_rounds", 0) > 0 and acc_st["total_bets"] >= escape_cfg["max_rounds"]: break
+        
+        # Giới hạn số ván (Mặc định 100 ván, chỉnh vô hạn trong VIP)
+        max_r = escape_cfg.get("max_rounds", 100)
+        if max_r > 0 and acc_st["total_bets"] >= max_r:
+            escape_cfg["global_running"] = False
+            bot.send_message(chat_id, f"🏁 **Đã hoàn thành định mức {max_r} ván cược. Bot tự động dừng!**", parse_mode="Markdown")
+            break
 
         try:
             rooms = [1, 2, 3, 4, 5, 6, 7, 8]
             room_id = random.choice(rooms)
             
-            # Gửi request vào phòng đúng cURL mẫu
             session_req.post("https://api.escapemaster.net/escape_game/enter_room",
                              json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id)},
                              headers=get_headers(), timeout=3)
@@ -952,7 +952,8 @@ def run_escape_bot_engine(chat_id, uid, skey):
                 acc_st["wins"] += 1
         except: pass
         
-        time.sleep(1.5)
+        # Nghỉ đủ chu kỳ ván đấu để không bị spam liên tục
+        time.sleep(5)
 
 def run_sprint_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)
@@ -961,6 +962,7 @@ def run_sprint_bot_engine(chat_id, uid, skey):
     base_api = "https://api.sprintrun.win"
     headers = {"accept": "*/*", "content-type": "application/json", "user-id": str(uid), "user-login": "login_v2", "user-secret-key": skey}
     session = requests.Session()
+    last_issue = None
 
     while sprint_cfg["global_running"] and not acc_st["random_stop"].is_set():
         if sprint_cfg.get("max_continuous_losses", 0) > 0 and acc_st["streak_loss"] >= sprint_cfg["max_continuous_losses"]:
@@ -982,18 +984,25 @@ def run_sprint_bot_engine(chat_id, uid, skey):
             sprint_cfg["global_running"] = False
             break
 
+        max_r = sprint_cfg.get("max_rounds", 100)
+        if max_r > 0 and acc_st["total_bets"] >= max_r:
+            sprint_cfg["global_running"] = False
+            bot.send_message(chat_id, f"🏁 **Đã hoàn thành định mức {max_r} ván cược. Bot tự động dừng!**", parse_mode="Markdown")
+            break
+
         try:
             r = session.get(f"{base_api}/sprint/home?asset={sprint_cfg['asset_type']}", headers=headers, timeout=5)
             if r.status_code == 200:
                 data = r.json().get("data", {})
                 issue_id = data.get("issue_id")
                 athletes = data.get("athlete_list", [])
-                if issue_id and len(athletes) >= 3:
+                if issue_id and issue_id != last_issue and len(athletes) >= 3:
                     chosen = [a["id"] for a in random.sample(athletes, 3)]
                     each_bet = (Decimal(str(sprint_cfg["bet_amount_total"])) / Decimal(3)).quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
                     for aid in chosen:
                         session.post(f"{base_api}/sprint/bet", json={"issue_id": issue_id, "bet_group": "winner", "asset_type": sprint_cfg["asset_type"], "athlete_id": aid, "bet_amount": float(each_bet)}, headers=headers, timeout=3)
                     acc_st["total_bets"] += 1
+                    last_issue = issue_id
         except: pass
         time.sleep(3)
 
