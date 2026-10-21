@@ -184,7 +184,7 @@ def api_verify_key():
     keys_db = load_keys()
     
     if key_code not in keys_db:
-        return {"status": "error", "msg": "Key không tồn tại!"}
+        return {"status": "error", "msg": "Key hoặc Mã Code không tồn tại!"}
         
     k_data = keys_db[key_code]
     duration_secs = int(k_data.get("duration_hours", 24) * 3600)
@@ -192,7 +192,7 @@ def api_verify_key():
     
     # CHẶN TUYỆT ĐỐI NẾU KEY ĐÃ ĐƯỢC SỬ DỤNG TRƯỚC ĐÓ
     if k_data.get("status") == "da_dung":
-        return {"status": "error", "msg": "Key này đã được sử dụng rồi! Không thể dùng lại."}
+        return {"status": "error", "msg": "Mã này đã được sử dụng rồi! Không thể dùng lại."}
         
     k_data["status"] = "da_dung"
     k_data["used_by"] = str(user_id)
@@ -242,7 +242,6 @@ def admin_dashboard():
     keys_db = load_keys()
     now = time.time()
     
-    # THỐNG KÊ TỔNG QUAN SỐ LƯỢNG NGƯỜI NHẬP
     total_keys_count = len(keys_db)
     used_keys_count = sum(1 for k, info in keys_db.items() if info.get('status') == 'da_dung')
     unused_keys_count = total_keys_count - used_keys_count
@@ -258,7 +257,6 @@ def admin_dashboard():
         h2 { color: #38bdf8; font-size: 18px; font-weight: 700; }
         .logout { color: #f87171; text-decoration: none; font-size: 12px; font-weight: 600; background: rgba(239, 68, 68, 0.1); padding: 6px 12px; border-radius: 8px; }
         
-        /* BOX THỐNG KÊ SỐ LƯỢNG */
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
         .stat-card { background: #0b0f19; border: 1px solid #334155; padding: 15px; border-radius: 14px; text-align: center; }
         .stat-card h4 { font-size: 12px; color: #94a3b8; margin-bottom: 5px; font-weight: 600; }
@@ -288,7 +286,6 @@ def admin_dashboard():
             <a href="/admin/logout" class="logout">Đăng xuất</a>
         </div>
         
-        <!-- HIỂN THỊ SỐ LƯỢNG NGƯỜI ĐÃ NHẬP VÀ CHECK TỔNG QUAN -->
         <div class="stats-grid">
             <div class="stat-card">
                 <h4>📊 Tổng số lượng Key</h4>
@@ -304,7 +301,6 @@ def admin_dashboard():
             </div>
         </div>
 
-        <!-- BẢNG TẠO KEY (HỖ TRỢ NHẬP SỐ LƯỢNG TÙY Ý) -->
         <div class="box-create">
             <div style="display: flex; flex-direction: column; gap: 4px;">
                 <label style="font-size: 11px; font-weight: 600; color: #94a3b8;">Thời hạn (Giờ):</label>
@@ -408,7 +404,6 @@ def admin_dashboard():
     """
     return render_template_string(html, keys=keys_db, now=now, total_keys_count=total_keys_count, used_keys_count=used_keys_count, unused_keys_count=unused_keys_count)
 
-# API TẠO HÀNG LOẠT KEY THEO SỐ LƯỢNG
 @app.route('/admin/create_custom_key', methods=['POST'])
 def admin_create_custom_key():
     if not session.get('admin_logged'): 
@@ -977,13 +972,24 @@ def handle_text_messages(message):
         show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_max_rounds_vip)
         return
 
+    # SỬA LỖI: XỬ LÝ NHẬP MÃ VIP ĐÃ ĐỒNG BỘ TRỰC TIẾP LÊN CLOUD VÀ MỞ KHÓA NGAY LẬP TỨC
     if cfg.get("waiting_for_vip_code"):
         try: bot.delete_message(chat_id, message.message_id)
         except: pass
         res = verify_key_with_server(text, str(chat_id))
         if res.get("status") == "success" and res.get("is_vip"):
             cfg["is_vip"] = True
+            cfg["has_valid_key"] = True
+            cfg["key_expire_at"] = res.get("expire_at", time.time() + 86400)
             cfg["waiting_for_vip_code"] = False
+            
+            # Lưu trạng thái đã dùng lên Cloud để Admin quản lý chính xác
+            keys_db = load_keys()
+            if text in keys_db:
+                keys_db[text]["status"] = "da_dung"
+                keys_db[text]["used_by"] = str(chat_id)
+                keys_db[text]["expire_at"] = cfg["key_expire_at"]
+                save_key_to_cloud(text, keys_db[text])
             
             def send_and_auto_delete():
                 try:
@@ -995,7 +1001,7 @@ def handle_text_messages(message):
             Thread(target=send_and_auto_delete, daemon=True).start()
             show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), cfg.get("active_game", "escape"))
         else:
-            err_msg = res.get("msg", "Mã Code không hợp lệ hoặc đã được sử dụng!")
+            err_msg = res.get("msg", "Mã Code VIP không hợp lệ hoặc đã được sử dụng!")
             def send_and_auto_delete_err():
                 try:
                     msg = bot.send_message(chat_id, f"❌ **{err_msg}**", parse_mode="Markdown")
