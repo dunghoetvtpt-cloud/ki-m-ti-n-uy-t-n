@@ -243,7 +243,7 @@ def admin_dashboard():
     used_keys_count = sum(1 for k, info in keys_db.items() if len(info.get('used_by', [])) > 0)
     unused_keys_count = total_keys_count - used_keys_count
 
-    # Tổng hợp thông tin người dùng
+    # Tổng hợp danh sách người dùng
     users_list = {}
     for k, info in keys_db.items():
         for uid in info.get("used_by", []):
@@ -430,7 +430,7 @@ def admin_dashboard():
             </div>
         </div>
 
-        <!-- TAB 2: QUẢN LÝ NGƯỜI DÙNG & TÍNH NĂNG KHÓA (BAN) -->
+        <!-- TAB 2: QUẢN LÝ NGƯỜI DÙNG & KHÓA (BAN) -->
         <div id="tab-users" class="tab-content">
             <h3 style="font-size: 15px; color: #38bdf8; margin-bottom: 12px;"><i class="fa-solid fa-users"></i> Quản Lý & Khóa Người Dùng</h3>
             <div class="table-responsive">
@@ -644,7 +644,7 @@ def admin_modify_key_time():
         return jsonify({"success": True})
     except Exception as e: return jsonify({"success": False, "msg": str(e)})
 
-# 🛠️ API XỬ LÝ KHÓA NGƯỜI DÙNG TẠM THỜI VÀ VĨNH VIỄN
+# 🛠️ KHÓA NGƯỜI DÙNG & TỰ CẬP NHẬT GIAO DIỆN
 @app.route('/admin/ban_user_advanced', methods=['POST'])
 def admin_ban_user_advanced():
     if not session.get('admin_logged'): return jsonify({"success": False, "msg": "Chưa đăng nhập!"})
@@ -667,9 +667,14 @@ def admin_ban_user_advanced():
             db["banned_users"][uid] = {"type": "temp", "until": until_time, "minutes": minutes}
             
         save_system_db(db)
+        
+        # 🚀 Đổi giao diện Telegram của người dùng ngay lập tức!
+        broadcast_system_status_change()
+        
         return jsonify({"success": True})
     except Exception as e: return jsonify({"success": False, "msg": str(e)})
 
+# 🛠️ BẬT TẮT BẢO TRÌ & TỰ CẬP NHẬT GIAO DIỆN
 @app.route('/admin/update_maintenance', methods=['POST'])
 def admin_update_maintenance():
     if not session.get('admin_logged'): return jsonify({"success": False, "msg": "Chưa đăng nhập!"})
@@ -678,6 +683,10 @@ def admin_update_maintenance():
         db = load_system_db()
         db["maintenance"] = {"active": bool(req_data.get("active")), "notice": req_data.get("notice", "")}
         save_system_db(db)
+        
+        # 🚀 Ép khôi phục hoặc khóa giao diện Telegram lập tức!
+        broadcast_system_status_change()
+        
         return jsonify({"success": True})
     except Exception as e: return jsonify({"success": False, "msg": str(e)})
 
@@ -787,7 +796,6 @@ def verify_key_with_server(key_code, user_id):
         return {"status": "success", "msg": "Kích hoạt thành công!", "expire_at": expire_time, "is_vip": is_vip}
     except Exception as e: return {"status": "error", "msg": f"Lỗi: {str(e)}"}
 
-# 🛠️ KIỂM TRA BANNED NGƯỜI DÙNG CHUẨN XÁC 100%
 def check_user_ban_status(chat_id):
     chat_id_str = str(chat_id)
     db = load_system_db()
@@ -846,6 +854,30 @@ def check_key_validity(chat_id):
     cfg["escape"]["global_running"] = False; cfg["sprint"]["global_running"] = False
     return False
 
+def broadcast_system_status_change():
+    """Ép cập nhật trực tiếp tin nhắn menu Telegram của tất cả người dùng khi Admin đổi trạng thái"""
+    def worker():
+        with data_lock:
+            chat_ids = list(user_data.keys())
+        for cid in chat_ids:
+            try:
+                cfg = user_data.get(cid, {})
+                menu_id = cfg.get("menu_msg_id") or cfg.get("prompt_msg_id")
+                if menu_id:
+                    is_banned, ban_msg = check_user_ban_status(cid)
+                    db = load_system_db()
+                    is_maint = db.get("maintenance", {}).get("active", False)
+                    notice = db.get("maintenance", {}).get("notice", "⚠️ Hệ thống đang bảo trì!")
+                    
+                    if is_banned:
+                        bot.edit_message_text(ban_msg, cid, menu_id, parse_mode="Markdown")
+                    elif is_maint:
+                        bot.edit_message_text(f"🛠️ **THÔNG BÁO BẢO TRÌ** 🛠️\n━━━━━━━━━━━━━━━━━━━\n{notice}", cid, menu_id, parse_mode="Markdown")
+                    else:
+                        show_main_menu(cid, menu_id, is_new=False)
+            except: pass
+    Thread(target=worker, daemon=True).start()
+
 def reset_user_wait_flags(cfg):
     cfg["waiting_for_link"] = None; cfg["waiting_for_bet"] = None
     cfg["waiting_for_max_losses"] = None; cfg["waiting_for_stop_loss"] = None
@@ -857,7 +889,6 @@ def send_welcome(message):
     try: bot.delete_message(chat_id, message.message_id)
     except: pass
     
-    # KIỂM TRA BANNED LẬP TỨC
     is_banned, ban_msg = check_user_ban_status(chat_id)
     if is_banned:
         bot.send_message(chat_id, ban_msg, parse_mode="Markdown")
@@ -895,6 +926,15 @@ def callback_all_handler(call):
         try:
             bot.answer_callback_query(call.id, "🚫 Bạn đã bị khóa tài khoản!", show_alert=True)
             bot.edit_message_text(ban_msg, chat_id, call.message.message_id, parse_mode="Markdown")
+        except: pass
+        return
+
+    db = load_system_db()
+    if db.get("maintenance", {}).get("active"):
+        notice = db.get("maintenance", {}).get("notice", "⚠️ Hệ thống đang bảo trì!")
+        try:
+            bot.answer_callback_query(call.id, "🛠️ Hệ thống đang bảo trì!", show_alert=True)
+            bot.edit_message_text(f"🛠️ **THÔNG BÁO BẢO TRÌ** 🛠️\n━━━━━━━━━━━━━━━━━━━\n{notice}", chat_id, call.message.message_id, parse_mode="Markdown")
         except: pass
         return
 
@@ -1228,7 +1268,6 @@ def handle_text_messages(message):
     chat_id = message.chat.id
     text = message.text.strip()
     
-    # KIỂM TRA BANNED KHI GỬI TIN NHẮN
     is_banned, ban_msg = check_user_ban_status(chat_id)
     if is_banned:
         bot.send_message(chat_id, ban_msg, parse_mode="Markdown")
