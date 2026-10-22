@@ -192,7 +192,6 @@ def get_link4m():
         return redirect(url_for('home', error="⚠️ Phát hiện spam! IP của bạn thao tác quá nhanh, vui lòng thử lại sau 1 phút."))
         
     ip_request_history[client_ip].append(now)
-    # ---------------------------------------------
 
     current_domain = request.host_url.rstrip('/')
     destination_url = f"{current_domain}/claim_key"
@@ -226,34 +225,8 @@ def claim_key():
 def api_verify_key():
     key_code = request.args.get('key', '').strip()
     user_id = str(request.args.get('user_id', '')).strip()
-    keys_db = load_keys()
-    
-    if key_code not in keys_db:
-        return {"status": "error", "msg": "Mã hoặc Key không tồn tại!"}
-        
-    k_data = keys_db[key_code]
-    duration_secs = int(k_data.get("duration_hours", 24) * 3600)
-    is_vip = bool(k_data.get("is_vip", False))
-    
-    used_by_list = k_data.get("used_by", [])
-    max_uses = int(k_data.get("max_uses", 1))
-    
-    if user_id in used_by_list:
-        return {"status": "error", "msg": "Bạn đã sử dụng mã này rồi!"}
-        
-    if len(used_by_list) >= max_uses:
-        return {"status": "error", "msg": "Mã này đã đạt giới hạn số người sử dụng!"}
-        
-    used_by_list.append(user_id)
-    k_data["used_by"] = used_by_list
-    if len(used_by_list) >= max_uses:
-        k_data["status"] = "da_dung"
-        
-    expire_time = time.time() + duration_secs
-    k_data["expire_at"] = expire_time
-    
-    save_key_to_cloud(key_code, k_data)
-    return {"status": "success", "msg": "Kích hoạt thành công!", "expire_at": expire_time, "is_vip": is_vip}
+    res = verify_key_with_server(key_code, user_id)
+    return res
 
 @app.route('/admin', methods=['GET', 'POST'])
 def admin_login():
@@ -406,6 +379,8 @@ def admin_dashboard():
                         <span class="status-used">👤 Đã có {{ used_list|length }} / {{ max_u }} người nhập</span><br>
                         {% if expire_at and expire_at > now %}
                             <small style="color: #38bdf8;">⏳ Còn: {{ rem_h }}h {{ rem_m }}p</small>
+                        {% else %}
+                            <small style="color: #f87171;">⚠️ Chưa kích hoạt / Đã hết hạn</small>
                         {% endif %}
                     </td>
                     <td>
@@ -454,7 +429,7 @@ def admin_dashboard():
         .then(res => res.json())
         .then(data => {
             if(data.success) {
-                showToast("✅ Đã cập nhật thời gian!");
+                showToast("✅ Đã cập nhật & cộng thêm thời gian thành công!");
                 setTimeout(() => { location.reload(); }, 1000);
             } else {
                 alert("Lỗi: " + data.msg);
@@ -500,6 +475,7 @@ def admin_create_custom_key():
     except Exception as e:
         return jsonify({"success": False, "msg": str(e)})
 
+# 🛠️ TÍNH NĂNG CẬP NHẬT & CỘNG THỜI GIAN CHUẨN XÁC NƠI ADMIN
 @app.route('/admin/update_key_time', methods=['POST'])
 def admin_update_key_time():
     if not session.get('admin_logged'): 
@@ -515,6 +491,10 @@ def admin_update_key_time():
             
         k_data = keys_db[key_code]
         k_data["duration_hours"] = new_hours
+        
+        # Nếu key đã được kích hoạt, tính lại thời điểm hết hạn = Thời điểm hiện tại + số giờ mới
+        if k_data.get("used_by"):
+            k_data["expire_at"] = time.time() + int(new_hours * 3600)
         
         save_key_to_cloud(key_code, k_data)
         return jsonify({"success": True})
@@ -598,15 +578,44 @@ def get_account_state(game_prefix, uid):
         }
     return account_threads[key]
 
+# 🛠️ XÁC THỰC KEY CHUẨN XÁC VÀ LƯU VĨNH VIỄN LÊN JSONBIN
 def verify_key_with_server(key_code, user_id):
     try:
-        web_url = os.environ.get("RENDER_EXTERNAL_URL", "http://localhost:5000")
-        url = f"{web_url}/api/verify_key?key={key_code}&user_id={user_id}"
-        res = requests.get(url, timeout=3)
-        return res.json()
-    except:
-        return {"status": "error", "msg": "Không thể kết nối máy chủ xác thực key!"}
+        keys_db = load_keys()
+        user_id_str = str(user_id)
+        
+        if key_code not in keys_db:
+            return {"status": "error", "msg": "Mã hoặc Key không tồn tại!"}
+            
+        k_data = keys_db[key_code]
+        duration_secs = int(k_data.get("duration_hours", 24) * 3600)
+        is_vip = bool(k_data.get("is_vip", False))
+        
+        used_by_list = [str(x) for x in k_data.get("used_by", [])]
+        max_uses = int(k_data.get("max_uses", 1))
+        
+        if user_id_str in used_by_list:
+            # Cho phép kích hoạt lại nếu cùng 1 user đăng nhập lại
+            expire_time = k_data.get("expire_at") or (time.time() + duration_secs)
+            return {"status": "success", "msg": "Kích hoạt lại thành công!", "expire_at": expire_time, "is_vip": is_vip}
+            
+        if len(used_by_list) >= max_uses:
+            return {"status": "error", "msg": "Mã này đã đạt giới hạn số người sử dụng!"}
+            
+        used_by_list.append(user_id_str)
+        k_data["used_by"] = used_by_list
+        if len(used_by_list) >= max_uses:
+            k_data["status"] = "da_dung"
+            
+        expire_time = time.time() + duration_secs
+        k_data["expire_at"] = expire_time
+        
+        save_key_to_cloud(key_code, k_data)
+        return {"status": "success", "msg": "Kích hoạt thành công!", "expire_at": expire_time, "is_vip": is_vip}
+    except Exception as e:
+        return {"status": "error", "msg": f"Lỗi kích hoạt: {str(e)}"}
 
+# 🛠️ TỰ ĐỘNG ĐỒNG BỘ THỜI GIAN THỰC TỪ JSONBIN VỀ MENU TELEGRAM BOT
 def check_key_validity(chat_id):
     cfg = get_user_config(chat_id)
     keys_db = load_keys()
@@ -614,21 +623,25 @@ def check_key_validity(chat_id):
     
     vip_valid = False
     key_valid = False
+    chat_id_str = str(chat_id)
     
     for k, info in keys_db.items():
-        used_list = info.get("used_by", [])
-        if str(chat_id) in used_list:
-            expire_at = info.get("expire_at", 0)
+        used_list = [str(x) for x in info.get("used_by", [])]
+        if chat_id_str in used_list:
+            expire_at = info.get("expire_at")
             if expire_at and now < expire_at:
                 key_valid = True
                 cfg["has_valid_key"] = True
-                cfg["key_expire_at"] = expire_at
+                cfg["key_expire_at"] = expire_at  # Cập nhật ngay lập tức nếu Admin gia hạn giờ
                 
                 if info.get("is_vip"):
                     vip_valid = True
                     cfg["is_vip"] = True
                     cfg["vip_expire_at"] = expire_at
-                session_manager.save_session_to_file(chat_id, expire_at)
+                
+                try:
+                    session_manager.save_session_to_file(chat_id, expire_at)
+                except: pass
                 break
 
     if not vip_valid and cfg.get("vip_expire_at", 0) > now:
@@ -640,7 +653,7 @@ def check_key_validity(chat_id):
         cfg["escape"]["max_rounds"] = 100
         cfg["sprint"]["max_rounds"] = 100
 
-    if key_valid or (cfg["has_valid_key"] and now < cfg.get("key_expire_at", 0)):
+    if key_valid or (cfg.get("has_valid_key") and now < cfg.get("key_expire_at", 0)):
         return True
 
     cfg["has_valid_key"] = False
@@ -835,6 +848,7 @@ def callback_game_actions(call):
     markup_back = types.InlineKeyboardMarkup()
     markup_back.add(types.InlineKeyboardButton("🔙 Trở lại", callback_data=f"back_to_game_{game_type}"))
 
+    # 🛠️ SỬA LỖI RESET THỐNG KÊ KHÔNG BỊ TRÀN VỀ 100 VÁN
     if action == "reset_stats":
         for uid in g_cfg["accounts"]:
             st = get_account_state(game_type, uid)
@@ -843,6 +857,10 @@ def callback_game_actions(call):
             st["wins"] = 0
             st["losses"] = 0
             st["streak_loss"] = 0
+        
+        if "max_rounds" not in g_cfg:
+            g_cfg["max_rounds"] = 100 if not cfg.get("is_vip") else 0
+            
         try: bot.answer_callback_query(call.id, "🔄 Đã reset thống kê về 0!")
         except: pass
         show_game_menu(chat_id, call.message.message_id, game_type)
@@ -1050,39 +1068,21 @@ def handle_text_messages(message):
         show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_max_rounds_vip)
         return
 
+    # 🛠️ SỬA LỖI LƯU VIP TRỰC TIẾP LÊN CLOUD JSONBIN (CHỐNG MẤT KHI DEPLOY RENDER)
     if cfg.get("waiting_for_vip_code"):
         try: bot.delete_message(chat_id, message.message_id)
         except: pass
         
-        keys_db = load_keys()
-        key_code = text
+        res = verify_key_with_server(text, str(chat_id))
         
-        if key_code in keys_db:
-            k_data = keys_db[key_code]
-            used_by_list = k_data.get("used_by", [])
-            max_uses = int(k_data.get("max_uses", 1))
-            
-            if not k_data.get("is_vip", False):
-                err_msg = "Đây là Key Thường, không phải Code VIP!"
-            elif len(used_by_list) >= max_uses and str(chat_id) not in used_by_list:
-                err_msg = "Mã Code VIP này đã đạt giới hạn số người sử dụng!"
+        if res.get("status") == "success":
+            if not res.get("is_vip", False):
+                err_msg = "Mã này là Key Thường, không phải Code VIP!"
             else:
-                if str(chat_id) not in used_by_list:
-                    used_by_list.append(str(chat_id))
-                
-                duration_secs = int(k_data.get("duration_hours", 24) * 3600)
-                expire_time = time.time() + duration_secs
-                
-                k_data["used_by"] = used_by_list
-                if len(used_by_list) >= max_uses:
-                    k_data["status"] = "da_dung"
-                k_data["expire_at"] = expire_time
-                save_key_to_cloud(key_code, k_data)
-                
                 cfg["is_vip"] = True
-                cfg["vip_expire_at"] = expire_time
+                cfg["vip_expire_at"] = res.get("expire_at", time.time() + 86400)
                 cfg["has_valid_key"] = True
-                cfg["key_expire_at"] = expire_time
+                cfg["key_expire_at"] = cfg["vip_expire_at"]
                 cfg["waiting_for_vip_code"] = False
                 
                 prompt_id = cfg.get("prompt_msg_id")
@@ -1094,7 +1094,7 @@ def handle_text_messages(message):
                 show_game_menu(chat_id, cfg.get("menu_msg_id"), active_g)
                 return
         else:
-            err_msg = "Mã Code VIP không tồn tại trong hệ thống!"
+            err_msg = res.get("msg", "Mã Code VIP không chính xác hoặc đã bị xóa!")
 
         def send_and_auto_delete_err():
             try:
@@ -1156,7 +1156,7 @@ def handle_text_messages(message):
             markup = types.InlineKeyboardMarkup()
             markup.add(
                 types.InlineKeyboardButton("🌐 Lấy Key Mới (24h)", url=web_url),
-                types.InlineKeyboardButton("🔑 Nhập Lại Key", callback_data="btn_nhap_key")
+                types.InlineKeyboardButton("🔑 Nhập Key Kích Hoạt", callback_data="btn_nhap_key")
             )
             bot.send_message(chat_id, f"❌ **{err_msg}**", reply_markup=markup, parse_mode="Markdown")
         return
@@ -1227,7 +1227,7 @@ def update_menu_live(chat_id, game_type):
     except: pass
 
 # ---------------------------------------------------------
-# ENGINE TỐC ĐỘ: NHẢY PHÒNG SIÊU TỐC, CƯỢC 60 GIÂY
+# ENGINE TỐC ĐỘ: TÍNH TOÁN CHUẨN XÁC KẾT QUẢ THẮNG THUA
 # ---------------------------------------------------------
 def run_escape_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)
@@ -1274,7 +1274,6 @@ def run_escape_bot_engine(chat_id, uid, skey):
         if not check_key_validity(chat_id): break
         
         max_r = escape_cfg.get("max_rounds", 100)
-        
         if max_r > 0 and acc_st["total_bets"] >= max_r:
             escape_cfg["global_running"] = False
             bot.send_message(chat_id, f"🏁 **Đã hoàn thành định mức {max_r} ván cược. Bot tự động dừng!**", parse_mode="Markdown")
@@ -1294,10 +1293,23 @@ def run_escape_bot_engine(chat_id, uid, skey):
                                    json={"asset_type": escape_cfg["asset_type"], "user_id": int(uid), "room_id": int(room_id), "bet_amount": amount},
                                    headers=get_headers(), timeout=3)
             
-            if res.status_code == 200 and res.json().get("code") == 0:
-                acc_st["total_bets"] += 1
-                acc_st["wins"] += 1
-                update_menu_live(chat_id, "escape")
+            if res.status_code == 200:
+                res_data = res.json()
+                if res_data.get("code") == 0:
+                    acc_st["total_bets"] += 1
+                    bet_dec = Decimal(str(amount))
+                    prize = Decimal(str(res_data.get("data", {}).get("prize", 0)))
+                    profit_this_round = prize - bet_dec
+                    
+                    acc_st["total_profit"] += profit_this_round
+                    if profit_this_round > 0:
+                        acc_st["wins"] += 1
+                        acc_st["streak_loss"] = 0
+                    else:
+                        acc_st["losses"] += 1
+                        acc_st["streak_loss"] += 1
+                        
+                    update_menu_live(chat_id, "escape")
         except: pass
         
         for _ in range(60):
@@ -1338,7 +1350,6 @@ def run_sprint_bot_engine(chat_id, uid, skey):
             break
 
         max_r = sprint_cfg.get("max_rounds", 100)
-        
         if max_r > 0 and acc_st["total_bets"] >= max_r:
             sprint_cfg["global_running"] = False
             bot.send_message(chat_id, f"🏁 **Đã hoàn thành định mức {max_r} ván cược. Bot tự động dừng!**", parse_mode="Markdown")
