@@ -58,6 +58,7 @@ def load_keys():
                 
                 info["max_uses"] = int(info.get("max_uses", 1))
                 info["is_vip"] = bool(info.get("is_vip", False))
+                info["total_bets_count"] = int(info.get("total_bets_count", 0))
                 clean_keys[k] = info
             return clean_keys
     except Exception as e:
@@ -84,7 +85,8 @@ def save_key_to_cloud(key_code, data):
             "expire_at": data.get("expire_at"),
             "duration_hours": data.get("duration_hours", 24),
             "is_vip": bool(data.get("is_vip", False)),
-            "max_uses": int(data.get("max_uses", 1))
+            "max_uses": int(data.get("max_uses", 1)),
+            "total_bets_count": int(data.get("total_bets_count", 0))
         }
         url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}"
         headers = {"Content-Type": "application/json", "X-Master-Key": JSONBIN_API_KEY}
@@ -119,11 +121,12 @@ def home():
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>XWORLD LICENSE GATEWAY - VIP</title>
         <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
             body { background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0f172a 100%); color: #f8fafc; min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
             .card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); border-radius: 30px; width: 100%; max-width: 440px; padding: 40px 25px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7); }
-            .icon-box { width: 70px; height: 70px; background: linear-gradient(135deg, #6366f1, #a855f7); border-radius: 20px; display: flex; align-items: center; justify-content: center; font-size: 32px; margin: 0 auto 20px; box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.5); }
+            .icon-box { width: 70px; height: 70px; background: linear-gradient(135deg, #6366f1, #a855f7); border-radius: 20px; display: flex; align-items: center; justify-content: center; font-size: 32px; margin: 0 auto 20px; box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.5); color: #fff; }
             .badge { display: inline-block; background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); padding: 6px 16px; border-radius: 30px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; }
             h2 { font-size: 26px; font-weight: 800; color: #fff; margin-bottom: 10px; }
             p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin-bottom: 30px; }
@@ -140,33 +143,33 @@ def home():
     </head>
     <body>
         <div class="card">
-            <div class="icon-box">⚡</div>
+            <div class="icon-box"><i class="fa-solid fa-bolt"></i></div>
             <span class="badge">Hệ Thống Tự Động 24/7</span>
             <h2>XWORLD GATEWAY</h2>
             <p>Vượt link an toàn và nhanh chóng để nhận mã bản quyền chính thức sử dụng trong 24 giờ.</p>
             {% if new_key %}
                 <div class="key-container">
                     <div class="key-text" id="keyText">{{ new_key }}</div>
-                    <button class="btn-copy" onclick="copyKey()">📋 Sao Chép Key Ngay</button>
+                    <button class="btn-copy" onclick="copyKey()"><i class="fa-regular fa-copy"></i> Sao Chép Key Ngay</button>
                 </div>
                 <p style="color: #4ade80; margin-top: 15px; font-weight: 600; font-size: 13px;">✨ Đã tạo key thành công! Dán vào Bot Telegram nhé.</p>
             {% else %}
-                <a href="/get_link4m" class="btn">🚀 TIẾN HÀNH LẤY KEY (24H)</a>
+                <a href="/get_link4m" class="btn"><i class="fa-solid fa-rocket"></i> TIẾN HÀNH LẤY KEY (24H)</a>
             {% endif %}
             {% if error %}
                 <div class="error">{{ error }}</div>
             {% endif %}
-            <a href="/admin" class="btn-admin">⚙️ Đăng nhập Quản trị viên hệ thống</a>
+            <a href="/admin" class="btn-admin"><i class="fa-solid fa-user-shield"></i> Đăng nhập Quản trị viên</a>
         </div>
         <script>
             function copyKey() {
                 const keyText = document.getElementById("keyText").innerText;
                 navigator.clipboard.writeText(keyText).then(() => {
                     const btn = document.querySelector(".btn-copy");
-                    btn.innerHTML = "✅ Đã Sao Chép!";
+                    btn.innerHTML = '<i class="fa-solid fa-check"></i> Đã Sao Chép!';
                     btn.style.background = "#15803d";
                     setTimeout(() => {
-                        btn.innerHTML = "📋 Sao Chép Key Ngay";
+                        btn.innerHTML = '<i class="fa-regular fa-copy"></i> Sao Chép Key Ngay';
                         btn.style.background = "#22c55e";
                     }, 2000);
                 });
@@ -179,7 +182,6 @@ def home():
 
 @app.route('/get_link4m')
 def get_link4m():
-    # 🛡️ CHỐNG SPAM REQUEST THEO IP (Tối đa 3 lần / 60 giây)
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     now = time.time()
     
@@ -216,7 +218,8 @@ def claim_key():
         "expire_at": None, 
         "duration_hours": 24,
         "is_vip": False,
-        "max_uses": 1
+        "max_uses": 1,
+        "total_bets_count": 0
     }
     save_key_to_cloud(new_key, key_data)
     return redirect(url_for('home', key=new_key))
@@ -241,6 +244,7 @@ def admin_login():
     <!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Đăng Nhập Quản Trị</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
         body { background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0f172a 100%); color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
@@ -254,10 +258,10 @@ def admin_login():
         .back:hover { color: #94a3b8; }
     </style></head>
     <body><div class="card">
-        <h2>🔒 Quản Trị Hệ Thống</h2>
+        <h2><i class="fa-solid fa-lock"></i> Quản Trị Hệ Thống</h2>
         {% if error %}<div class="error">{{ error }}</div>{% endif %}
         <form method="POST"><input type="password" name="password" placeholder="Nhập mật khẩu admin..." required><button type="submit" class="btn">Đăng Nhập</button></form>
-        <a href="/" class="back">← Quay lại trang chủ</a>
+        <a href="/" class="back"><i class="fa-solid fa-arrow-left"></i> Quay lại trang chủ</a>
     </div></body></html>
     """
     return render_template_string(html, error=error)
@@ -275,21 +279,22 @@ def admin_dashboard():
     html = """
     <!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Quản Lý Key</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
         body { background: #0f172a; color: #f8fafc; padding: 20px 10px; }
-        .container { max-width: 950px; margin: 0 auto; background: rgba(30, 41, 59, 0.85); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); padding: 20px; border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); }
+        .container { max-width: 1050px; margin: 0 auto; background: rgba(30, 41, 59, 0.85); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); padding: 20px; border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); }
         .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #334155; padding-bottom: 12px; gap: 10px; flex-wrap: wrap; }
-        h2 { color: #38bdf8; font-size: 18px; font-weight: 700; }
+        h2 { color: #38bdf8; font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
         .logout { color: #f87171; text-decoration: none; font-size: 12px; font-weight: 600; background: rgba(239, 68, 68, 0.1); padding: 6px 12px; border-radius: 8px; }
         
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
         .stat-card { background: #0b0f19; border: 1px solid #334155; padding: 15px; border-radius: 14px; text-align: center; }
-        .stat-card h4 { font-size: 12px; color: #94a3b8; margin-bottom: 5px; font-weight: 600; }
+        .stat-card h4 { font-size: 12px; color: #94a3b8; margin-bottom: 8px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; }
         .stat-card span { font-size: 20px; font-weight: 800; color: #38bdf8; }
         
         .table-responsive { width: 100%; overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; min-width: 650px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; min-width: 750px; }
         th, td { padding: 10px; border-bottom: 1px solid #334155; text-align: left; vertical-align: middle; }
         th { color: #94a3b8; font-weight: 600; }
         code { background: #0b0f19; padding: 4px 6px; border-radius: 6px; color: #4ade80; font-family: monospace; font-size: 11px; }
@@ -304,29 +309,30 @@ def admin_dashboard():
         .box-create input { padding: 8px 12px; border-radius: 8px; border: 1px solid #475569; background: #1e293b; color: #fff; width: 85px; font-size: 13px; text-align: center; }
         .input-time { padding: 6px; border-radius: 6px; border: 1px solid #475569; background: #1e293b; color: #fff; width: 75px; text-align: center; font-size: 12px; }
         .toast { position: fixed; bottom: 20px; right: 20px; background: #22c55e; color: white; padding: 10px 16px; border-radius: 8px; font-weight: 600; display: none; box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 1000; font-size: 13px; }
+        .badge-bets { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); padding: 3px 8px; border-radius: 12px; font-weight: 700; font-size: 11px; }
     </style></head>
     <body>
     <div class="toast" id="toastMsg">✅ Thành công!</div>
     <div class="container">
         <div class="header-flex">
-            <h2>⚙️ Quản Lý Key Bản Quyền & VIP</h2>
+            <h2><i class="fa-solid fa-sliders"></i> Quản Lý Key Bản Quyền & VIP</h2>
             <div style="display: flex; gap: 10px; align-items: center;">
-                <a href="/admin/delete_all" class="btn-del-all" onclick="return confirm('Cảnh báo: Xóa sạch toàn bộ kho key?')">🗑️ Xóa Sạch Kho Key</a>
-                <a href="/admin/logout" class="logout">Đăng xuất</a>
+                <a href="/admin/delete_all" class="btn-del-all" onclick="return confirm('Cảnh báo: Xóa sạch toàn bộ kho key?')"><i class="fa-solid fa-trash-can"></i> Xóa Sạch Kho Key</a>
+                <a href="/admin/logout" class="logout"><i class="fa-solid fa-right-from-bracket"></i> Đăng xuất</a>
             </div>
         </div>
         
         <div class="stats-grid">
             <div class="stat-card">
-                <h4>📊 Tổng số lượng Key</h4>
+                <h4><i class="fa-solid fa-chart-pie" style="color: #818cf8;"></i> Tổng số lượng Key</h4>
                 <span>{{ total_keys_count }}</span>
             </div>
             <div class="stat-card">
-                <h4>👤 Đã có người nhập</h4>
+                <h4><i class="fa-solid fa-user-check" style="color: #f87171;"></i> Đã có người nhập</h4>
                 <span style="color: #f87171;">{{ used_keys_count }}</span>
             </div>
             <div class="stat-card">
-                <h4>🟢 Chưa có ai nhập</h4>
+                <h4><i class="fa-solid fa-circle-check" style="color: #4ade80;"></i> Chưa có ai nhập</h4>
                 <span style="color: #4ade80;">{{ unused_keys_count }}</span>
             </div>
         </div>
@@ -345,8 +351,8 @@ def admin_dashboard():
                 <input type="number" id="maxUses" value="1" min="1" max="1000">
             </div>
             <div style="display: flex; gap: 8px; margin-top: 16px;">
-                <button class="btn-add" onclick="createCustomKey(false)">➕ Tạo Key Thường</button>
-                <button class="btn-vip" onclick="createCustomKey(true)">👑 Tạo Code VIP</button>
+                <button class="btn-add" onclick="createCustomKey(false)"><i class="fa-solid fa-plus"></i> Tạo Key Thường</button>
+                <button class="btn-vip" onclick="createCustomKey(true)"><i class="fa-solid fa-crown"></i> Tạo Code VIP</button>
             </div>
         </div>
 
@@ -357,6 +363,7 @@ def admin_dashboard():
                     <th>Loại</th>
                     <th>Cài Giờ (Tiếng)</th>
                     <th>Số Người Nhập / Giới Hạn</th>
+                    <th>Tổng Ván Cược</th>
                     <th>Thao Tác</th>
                 </tr>
                 {% for k, info in keys.items() %}
@@ -366,9 +373,10 @@ def admin_dashboard():
                 {% set rem_m = ((remain % 3600) // 60)|int %}
                 {% set used_list = info.get('used_by', []) %}
                 {% set max_u = info.get('max_uses', 1) %}
+                {% set tot_bets = info.get('total_bets_count', 0) %}
                 <tr>
                     <td><code>{{ k }}</code></td>
-                    <td>{% if info.get('is_vip') %}<b style="color:#eab308">VIP 👑</b>{% else %}<span style="color:#94a3b8">Thường</span>{% endif %}</td>
+                    <td>{% if info.get('is_vip') %}<b style="color:#eab308"><i class="fa-solid fa-crown"></i> VIP</b>{% else %}<span style="color:#94a3b8">Thường</span>{% endif %}</td>
                     <td>
                         <div style="display: flex; gap: 4px; align-items: center;">
                             <input type="number" id="time_{{ k }}" value="{{ info.get('duration_hours', 24) }}" class="input-time">
@@ -376,17 +384,20 @@ def admin_dashboard():
                         </div>
                     </td>
                     <td>
-                        <span class="status-used">👤 Đã có {{ used_list|length }} / {{ max_u }} người nhập</span><br>
+                        <span class="status-used"><i class="fa-solid fa-users"></i> {{ used_list|length }} / {{ max_u }} người</span><br>
                         {% if expire_at and expire_at > now %}
-                            <small style="color: #38bdf8;">⏳ Còn: {{ rem_h }}h {{ rem_m }}p</small>
+                            <small style="color: #38bdf8;"><i class="fa-regular fa-clock"></i> Còn: {{ rem_h }}h {{ rem_m }}p</small>
                         {% else %}
-                            <small style="color: #f87171;">⚠️ Chưa kích hoạt / Đã hết hạn</small>
+                            <small style="color: #f87171;"><i class="fa-solid fa-triangle-exclamation"></i> Chưa kích hoạt / Hết hạn</small>
                         {% endif %}
                     </td>
                     <td>
+                        <span class="badge-bets"><i class="fa-solid fa-gamepad"></i> {{ tot_bets }} ván</span>
+                    </td>
+                    <td>
                         <div style="display: flex; gap: 4px;">
-                            <button class="btn-copy-code" onclick="copyThisKey('{{ k }}')">📋 Sao chép</button>
-                            <a href="/admin/delete?key={{ k }}" class="btn-del" onclick="return confirm('Xóa key này?')">Xóa</a>
+                            <button class="btn-copy-code" onclick="copyThisKey('{{ k }}')"><i class="fa-regular fa-copy"></i> Coppy</button>
+                            <a href="/admin/delete?key={{ k }}" class="btn-del" onclick="return confirm('Xóa key này?')"><i class="fa-solid fa-trash"></i> Xóa</a>
                         </div>
                     </td>
                 </tr>
@@ -464,7 +475,8 @@ def admin_create_custom_key():
                 "expire_at": None,
                 "duration_hours": hours,
                 "is_vip": is_vip,
-                "max_uses": max_uses
+                "max_uses": max_uses,
+                "total_bets_count": 0
             }
             
         url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}"
@@ -475,7 +487,6 @@ def admin_create_custom_key():
     except Exception as e:
         return jsonify({"success": False, "msg": str(e)})
 
-# 🛠️ TÍNH NĂNG CẬP NHẬT & CỘNG THỜI GIAN CHUẨN XÁC NƠI ADMIN
 @app.route('/admin/update_key_time', methods=['POST'])
 def admin_update_key_time():
     if not session.get('admin_logged'): 
@@ -492,7 +503,6 @@ def admin_update_key_time():
         k_data = keys_db[key_code]
         k_data["duration_hours"] = new_hours
         
-        # Nếu key đã được kích hoạt, tính lại thời điểm hết hạn = Thời điểm hiện tại + số giờ mới
         if k_data.get("used_by"):
             k_data["expire_at"] = time.time() + int(new_hours * 3600)
         
@@ -578,7 +588,19 @@ def get_account_state(game_prefix, uid):
         }
     return account_threads[key]
 
-# 🛠️ XÁC THỰC KEY CHUẨN XÁC VÀ LƯU VĨNH VIỄN LÊN JSONBIN
+# 🛠️ CỘNG TỔNG VÁN CƯỢC LÊN CLOUD VÀ XÁC THỰC KEY
+def increment_key_bets_count(chat_id):
+    try:
+        keys_db = load_keys()
+        chat_id_str = str(chat_id)
+        for k, info in keys_db.items():
+            used_list = [str(x) for x in info.get("used_by", [])]
+            if chat_id_str in used_list:
+                info["total_bets_count"] = int(info.get("total_bets_count", 0)) + 1
+                save_key_to_cloud(k, info)
+                break
+    except: pass
+
 def verify_key_with_server(key_code, user_id):
     try:
         keys_db = load_keys()
@@ -595,7 +617,6 @@ def verify_key_with_server(key_code, user_id):
         max_uses = int(k_data.get("max_uses", 1))
         
         if user_id_str in used_by_list:
-            # Cho phép kích hoạt lại nếu cùng 1 user đăng nhập lại
             expire_time = k_data.get("expire_at") or (time.time() + duration_secs)
             return {"status": "success", "msg": "Kích hoạt lại thành công!", "expire_at": expire_time, "is_vip": is_vip}
             
@@ -615,7 +636,6 @@ def verify_key_with_server(key_code, user_id):
     except Exception as e:
         return {"status": "error", "msg": f"Lỗi kích hoạt: {str(e)}"}
 
-# 🛠️ TỰ ĐỘNG ĐỒNG BỘ THỜI GIAN THỰC TỪ JSONBIN VỀ MENU TELEGRAM BOT
 def check_key_validity(chat_id):
     cfg = get_user_config(chat_id)
     keys_db = load_keys()
@@ -632,7 +652,7 @@ def check_key_validity(chat_id):
             if expire_at and now < expire_at:
                 key_valid = True
                 cfg["has_valid_key"] = True
-                cfg["key_expire_at"] = expire_at  # Cập nhật ngay lập tức nếu Admin gia hạn giờ
+                cfg["key_expire_at"] = expire_at
                 
                 if info.get("is_vip"):
                     vip_valid = True
@@ -848,7 +868,6 @@ def callback_game_actions(call):
     markup_back = types.InlineKeyboardMarkup()
     markup_back.add(types.InlineKeyboardButton("🔙 Trở lại", callback_data=f"back_to_game_{game_type}"))
 
-    # 🛠️ SỬA LỖI RESET THỐNG KÊ KHÔNG BỊ TRÀN VỀ 100 VÁN
     if action == "reset_stats":
         for uid in g_cfg["accounts"]:
             st = get_account_state(game_type, uid)
@@ -1068,7 +1087,6 @@ def handle_text_messages(message):
         show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_max_rounds_vip)
         return
 
-    # 🛠️ SỬA LỖI LƯU VIP TRỰC TIẾP LÊN CLOUD JSONBIN (CHỐNG MẤT KHI DEPLOY RENDER)
     if cfg.get("waiting_for_vip_code"):
         try: bot.delete_message(chat_id, message.message_id)
         except: pass
@@ -1227,7 +1245,7 @@ def update_menu_live(chat_id, game_type):
     except: pass
 
 # ---------------------------------------------------------
-# ENGINE TỐC ĐỘ: TÍNH TOÁN CHUẨN XÁC KẾT QUẢ THẮNG THUA
+# ENGINE TỐC ĐỘ: TỰ ĐỘNG CỘNG LƯỢT CƯỢC KHI THỰC HIỆN BẤM
 # ---------------------------------------------------------
 def run_escape_bot_engine(chat_id, uid, skey):
     cfg = get_user_config(chat_id)
@@ -1297,6 +1315,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
                 res_data = res.json()
                 if res_data.get("code") == 0:
                     acc_st["total_bets"] += 1
+                    increment_key_bets_count(chat_id)
                     bet_dec = Decimal(str(amount))
                     prize = Decimal(str(res_data.get("data", {}).get("prize", 0)))
                     profit_this_round = prize - bet_dec
@@ -1368,6 +1387,7 @@ def run_sprint_bot_engine(chat_id, uid, skey):
                     for aid in chosen:
                         session.post(f"{base_api}/sprint/bet", json={"issue_id": issue_id, "bet_group": "winner", "asset_type": sprint_cfg["asset_type"], "athlete_id": aid, "bet_amount": float(each_bet)}, headers=headers, timeout=3)
                     acc_st["total_bets"] += 1
+                    increment_key_bets_count(chat_id)
                     last_issue = issue_id
                     update_menu_live(chat_id, "sprint")
         except: pass
