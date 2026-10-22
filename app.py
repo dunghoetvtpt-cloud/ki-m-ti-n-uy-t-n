@@ -27,14 +27,14 @@ LINK4M_API_TOKEN = "68a76c1354de3f0da567ca17"
 ip_request_history = {}
 
 # ---------------------------------------------------------
-# 🗄️ KẾT NỐI JSONBIN.IO
+# 🗄️ KẾT NỐI JSONBIN.IO (LƯU DỮ LIỆU CƠ SỞ BẢO MẬT)
 # ---------------------------------------------------------
 JSONBIN_BIN_ID = os.environ.get("JSONBIN_BIN_ID", "")
 JSONBIN_API_KEY = os.environ.get("JSONBIN_API_KEY", "")
 
 def load_system_db():
     if not JSONBIN_BIN_ID or not JSONBIN_API_KEY: 
-        return {"keys": {}, "banned_users": [], "maintenance": {"active": False, "notice": ""}}
+        return {"keys": {}, "banned_users": {}, "maintenance": {"active": False, "notice": ""}}
     try:
         url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}/latest"
         headers = {"X-Master-Key": JSONBIN_API_KEY}
@@ -42,7 +42,7 @@ def load_system_db():
         if res.status_code == 200:
             record = res.json().get("record", {})
             if "keys" not in record: record["keys"] = {}
-            if "banned_users" not in record: record["banned_users"] = []
+            if "banned_users" not in record or isinstance(record["banned_users"], list): record["banned_users"] = {}
             if "maintenance" not in record: record["maintenance"] = {"active": False, "notice": ""}
             
             clean_keys = {}
@@ -62,7 +62,7 @@ def load_system_db():
             return record
     except Exception as e:
         pass
-    return {"keys": {}, "banned_users": [], "maintenance": {"active": False, "notice": ""}}
+    return {"keys": {}, "banned_users": {}, "maintenance": {"active": False, "notice": ""}}
 
 def save_system_db(db):
     if not JSONBIN_BIN_ID or not JSONBIN_API_KEY: return
@@ -101,7 +101,7 @@ def delete_key_from_cloud(key_code):
         save_system_db(db)
 
 # ---------------------------------------------------------
-# FLASK WEB ROUTES (GIAO DIỆN LẤY KEY & ADMIN 3 TAB)
+# FLASK WEB ROUTES (GIAO DIỆN LẤY KEY & ADMIN)
 # ---------------------------------------------------------
 @app.route('/')
 def home():
@@ -235,7 +235,7 @@ def admin_dashboard():
     if not session.get('admin_logged'): return redirect(url_for('admin_login'))
     db = load_system_db()
     keys_db = db.get("keys", {})
-    banned_users = db.get("banned_users", [])
+    banned_users = db.get("banned_users", {})
     maint = db.get("maintenance", {"active": False, "notice": ""})
     now = time.time()
     
@@ -243,10 +243,19 @@ def admin_dashboard():
     used_keys_count = sum(1 for k, info in keys_db.items() if len(info.get('used_by', [])) > 0)
     unused_keys_count = total_keys_count - used_keys_count
 
-    # Tổng hợp danh sách người dùng toàn diện
+    # Tổng hợp thông tin người dùng
     users_list = {}
     for k, info in keys_db.items():
         for uid in info.get("used_by", []):
+            ban_info = banned_users.get(uid)
+            is_banned = False
+            ban_until = 0
+            if ban_info:
+                if ban_info.get("type") == "perm": is_banned = True
+                elif ban_info.get("type") == "temp" and ban_info.get("until", 0) > now:
+                    is_banned = True
+                    ban_until = ban_info.get("until", 0)
+
             if uid not in users_list:
                 users_list[uid] = {
                     "chat_id": uid,
@@ -254,7 +263,9 @@ def admin_dashboard():
                     "total_bets": info.get("total_bets_count", 0),
                     "is_vip": info.get("is_vip", False),
                     "expire_at": info.get("expire_at", 0),
-                    "is_banned": uid in banned_users
+                    "is_banned": is_banned,
+                    "ban_type": ban_info.get("type") if ban_info else None,
+                    "ban_until": ban_until
                 }
             else:
                 users_list[uid]["keys_used"].append(k)
@@ -275,7 +286,6 @@ def admin_dashboard():
         h2 { color: #38bdf8; font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
         .logout { color: #f87171; text-decoration: none; font-size: 12px; font-weight: 600; background: rgba(239, 68, 68, 0.1); padding: 6px 12px; border-radius: 8px; }
         
-        /* THANH ĐIỀU HƯỚNG TAB GIAO DIỆN */
         .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #334155; padding-bottom: 8px; }
         .tab-btn { background: #1e293b; color: #94a3b8; border: none; padding: 10px 18px; border-radius: 12px; cursor: pointer; font-weight: 700; font-size: 13px; transition: 0.2s; display: flex; align-items: center; gap: 8px; }
         .tab-btn.active { background: #6366f1; color: #fff; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4); }
@@ -288,7 +298,7 @@ def admin_dashboard():
         .stat-card span { font-size: 20px; font-weight: 800; color: #38bdf8; }
         
         .table-responsive { width: 100%; overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; min-width: 800px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; min-width: 850px; }
         th, td { padding: 10px; border-bottom: 1px solid #334155; text-align: left; vertical-align: middle; }
         th { color: #94a3b8; font-weight: 600; }
         code { background: #0b0f19; padding: 4px 6px; border-radius: 6px; color: #4ade80; font-family: monospace; font-size: 11px; }
@@ -301,7 +311,8 @@ def admin_dashboard():
         .btn-copy-code { background: rgba(99, 102, 241, 0.15); color: #818cf8; }
         .btn-add { background: #22c55e; color: #fff; border: none; padding: 10px 16px; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 12px; }
         .btn-vip { background: #eab308; color: #000; border: none; padding: 10px 16px; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 12px; }
-        .btn-ban { background: #ef4444; color: #fff; }
+        .btn-ban-temp { background: #f97316; color: #fff; }
+        .btn-ban-perm { background: #ef4444; color: #fff; }
         .btn-unban { background: #3b82f6; color: #fff; }
 
         .box-create { background: #0b0f19; padding: 15px; border-radius: 14px; margin-bottom: 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; border: 1px solid #334155; }
@@ -309,7 +320,6 @@ def admin_dashboard():
         .input-time { padding: 6px; border-radius: 6px; border: 1px solid #475569; background: #1e293b; color: #fff; width: 70px; text-align: center; font-size: 12px; }
         .toast { position: fixed; bottom: 20px; right: 20px; background: #22c55e; color: white; padding: 10px 16px; border-radius: 8px; font-weight: 600; display: none; box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 1000; font-size: 13px; }
         
-        /* CÔNG TẮC BẢO TRÌ SWITCH */
         .switch { position: relative; display: inline-block; width: 50px; height: 26px; }
         .switch input { opacity: 0; width: 0; height: 0; }
         .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #334155; transition: .3s; border-radius: 34px; }
@@ -393,8 +403,8 @@ def admin_dashboard():
                         <td>
                             <div style="display: flex; gap: 4px; align-items: center;">
                                 <input type="number" id="time_{{ k }}" value="24" class="input-time">
-                                <button class="btn-action btn-add-time" onclick="modifyKeyTime('{{ k }}', 'add')" title="Cộng thêm giờ"><i class="fa-solid fa-plus"></i> Cộng</button>
-                                <button class="btn-action btn-sub-time" onclick="modifyKeyTime('{{ k }}', 'sub')" title="Trừ bớt giờ"><i class="fa-solid fa-minus"></i> Trừ</button>
+                                <button class="btn-action btn-add-time" onclick="modifyKeyTime('{{ k }}', 'add')"><i class="fa-solid fa-plus"></i> Cộng</button>
+                                <button class="btn-action btn-sub-time" onclick="modifyKeyTime('{{ k }}', 'sub')"><i class="fa-solid fa-minus"></i> Trừ</button>
                             </div>
                         </td>
                         <td>
@@ -420,47 +430,51 @@ def admin_dashboard():
             </div>
         </div>
 
-        <!-- TAB 2: QUẢN LÝ NGƯỜI DÙNG -->
+        <!-- TAB 2: QUẢN LÝ NGƯỜI DÙNG & TÍNH NĂNG KHÓA (BAN) -->
         <div id="tab-users" class="tab-content">
-            <h3 style="font-size: 15px; color: #38bdf8; margin-bottom: 12px;"><i class="fa-solid fa-users"></i> Danh Sách Người Dùng Đã Kích Hoạt</h3>
+            <h3 style="font-size: 15px; color: #38bdf8; margin-bottom: 12px;"><i class="fa-solid fa-users"></i> Quản Lý & Khóa Người Dùng</h3>
             <div class="table-responsive">
                 <table>
                     <tr>
                         <th>Telegram Chat ID</th>
                         <th>Cấp Độ</th>
                         <th>Tổng Ván Cược</th>
-                        <th>Thời Hạn Còn Lại</th>
-                        <th>Trạng Thái Khóa</th>
-                        <th>Thao Tác Khóa</th>
+                        <th>Trạng Thái Khóa (Ban)</th>
+                        <th>Cài Đặt Khóa Tạm Thời (Phút)</th>
+                        <th>Thao Tác Khóa / Mở Khóa</th>
                     </tr>
                     {% for uid, uinfo in users.items() %}
-                    {% set rem_u = (uinfo.expire_at - now) if uinfo.expire_at > now else 0 %}
-                    {% set rem_uh = (rem_u // 3600)|int %}
-                    {% set rem_um = ((rem_u % 3600) // 60)|int %}
+                    {% set rem_ban = (uinfo.ban_until - now) if uinfo.ban_until > now else 0 %}
+                    {% set rem_ban_m = (rem_ban // 60)|int %}
                     <tr>
                         <td><code>{{ uid }}</code></td>
                         <td>{% if uinfo.is_vip %}<b style="color:#eab308"><i class="fa-solid fa-crown"></i> VIP</b>{% else %}<span style="color:#94a3b8">Thường</span>{% endif %}</td>
                         <td><b style="color: #38bdf8;"><i class="fa-solid fa-gamepad"></i> {{ uinfo.total_bets }} ván</b></td>
                         <td>
-                            {% if uinfo.expire_at > now %}
-                                <span style="color: #4ade80;">⏳ Còn {{ rem_uh }}h {{ rem_um }}p</span>
+                            {% if uinfo.is_banned %}
+                                {% if uinfo.ban_type == 'perm' %}
+                                    <b style="color: #ef4444;"><i class="fa-solid fa-user-slash"></i> Bị Khóa Vĩnh Viễn</b>
+                                {% else %}
+                                    <b style="color: #f97316;"><i class="fa-solid fa-clock-rotate-left"></i> Khóa tạm thời (Còn {{ rem_ban_m }} phút)</b>
+                                {% endif %}
                             {% else %}
-                                <span style="color: #f87171;">⚠️ Hết hạn</span>
+                                <b style="color: #22c55e;"><i class="fa-solid fa-user-check"></i> Hoạt động bình thường</b>
                             {% endif %}
                         </td>
                         <td>
-                            {% if uinfo.is_banned %}
-                                <b style="color: #ef4444;">🚫 Bị Khóa (Banned)</b>
-                            {% else %}
-                                <b style="color: #22c55e;">🟢 Hoạt động</b>
-                            {% endif %}
+                            <div style="display: flex; gap: 4px; align-items: center;">
+                                <input type="number" id="ban_time_{{ uid }}" value="24" class="input-time" style="width: 60px;">
+                                <button class="btn-action btn-ban-temp" onclick="banUserAction('{{ uid }}', 'temp')">Khóa Phút</button>
+                            </div>
                         </td>
                         <td>
-                            {% if uinfo.is_banned %}
-                                <button class="btn-action btn-unban" onclick="toggleBanUser('{{ uid }}', 'unban')"><i class="fa-solid fa-unlock"></i> Mở Khóa</button>
-                            {% else %}
-                                <button class="btn-action btn-ban" onclick="toggleBanUser('{{ uid }}', 'ban')"><i class="fa-solid fa-user-slash"></i> Khóa Lập Tức</button>
-                            {% endif %}
+                            <div style="display: flex; gap: 4px;">
+                                {% if uinfo.is_banned %}
+                                    <button class="btn-action btn-unban" onclick="banUserAction('{{ uid }}', 'unban')"><i class="fa-solid fa-unlock"></i> Hủy Banned</button>
+                                {% else %}
+                                    <button class="btn-action btn-ban-perm" onclick="banUserAction('{{ uid }}', 'perm')"><i class="fa-solid fa-ban"></i> Khóa Vĩnh Viễn</button>
+                                {% endif %}
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
@@ -480,20 +494,20 @@ def admin_dashboard():
                         <span class="slider"></span>
                     </label>
                     <span id="maintText" style="font-weight: 700; font-size: 14px;">
-                        {% if maint.active %}<span style="color: #ef4444;">🔴 ĐANG BẬT BẢO TRÌ (Bot ngắt toàn bộ chức năng)</span>{% else %}<span style="color: #22c55e;">🟢 ĐANG HOẠT ĐỘNG BÌNH THƯỜNG</span>{% endif %}
+                        {% if maint.active %}<span style="color: #ef4444;">🔴 ĐANG BẬT BẢO TRÌ</span>{% else %}<span style="color: #22c55e;">🟢 ĐANG HOẠT ĐỘNG BÌNH THƯỜNG</span>{% endif %}
                     </span>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <label style="font-size: 12px; font-weight: 600; color: #94a3b8;">Nội dung thông báo bảo trì (khi bật công tắc, người dùng chỉ nhìn thấy dòng này):</label>
+                    <label style="font-size: 12px; font-weight: 600; color: #94a3b8;">Nội dung thông báo bảo trì:</label>
                     <textarea id="maintNotice" rows="3" style="width: 100%; background: #1e293b; color: #fff; border: 1px solid #475569; border-radius: 8px; padding: 10px; font-size: 13px;">{{ maint.notice or "⚠️ Hệ thống đang tiến hành nâng cấp & bảo trì định kỳ. Vui lòng quay lại sau ít phút!" }}</textarea>
                     <button class="btn-add" style="width: 180px; margin-top: 5px;" onclick="updateMaintenance()"><i class="fa-solid fa-floppy-disk"></i> Lưu Thông Báo</button>
                 </div>
             </div>
 
             <div style="background: #0b0f19; padding: 20px; border-radius: 16px; border: 1px solid #334155;">
-                <h3 style="font-size: 15px; color: #38bdf8; margin-bottom: 15px;"><i class="fa-solid fa-bullhorn"></i> Gửi Thông Báo Tức Thời Đến Tất Cả Người Dùng</h3>
-                <p style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">💬 Thông báo sẽ được gửi thẳng đến máy người dùng và <b>TỰ ĐỘNG XÓA SAU 15 GIÂY</b> để đỡ rác ô chat!</p>
-                <textarea id="broadcastMsg" rows="3" placeholder="Nhập nội dung thông báo gửi toàn bộ người dùng..." style="width: 100%; background: #1e293b; color: #fff; border: 1px solid #475569; border-radius: 8px; padding: 10px; font-size: 13px; margin-bottom: 10px;"></textarea>
+                <h3 style="font-size: 15px; color: #38bdf8; margin-bottom: 15px;"><i class="fa-solid fa-bullhorn"></i> Gửi Thông Báo Tức Thời Đến Người Dùng</h3>
+                <p style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">💬 Thông báo sẽ tự động xóa sau 15 giây!</p>
+                <textarea id="broadcastMsg" rows="3" placeholder="Nhập nội dung thông báo..." style="width: 100%; background: #1e293b; color: #fff; border: 1px solid #475569; border-radius: 8px; padding: 10px; font-size: 13px; margin-bottom: 10px;"></textarea>
                 <button class="btn-vip" style="width: 200px;" onclick="sendBroadcast()"><i class="fa-solid fa-paper-plane"></i> Gửi Thông Báo Tức Thời</button>
             </div>
         </div>
@@ -503,8 +517,7 @@ def admin_dashboard():
     <script>
     function showToast(msg) {
         const t = document.getElementById("toastMsg");
-        t.innerText = msg;
-        t.style.display = "block";
+        t.innerText = msg; t.style.display = "block";
         setTimeout(() => { t.style.display = "none"; }, 2500);
     }
 
@@ -542,20 +555,21 @@ def admin_dashboard():
         .then(res => res.json())
         .then(data => {
             if(data.success) {
-                showToast("✅ Đã " + (mode === 'add' ? 'cộng' : 'trừ') + " " + hours + " giờ thành công!");
+                showToast("✅ Đã " + (mode === 'add' ? 'cộng' : 'trừ') + " " + hours + " giờ!");
                 setTimeout(() => { location.reload(); }, 800);
             } else { alert("Lỗi: " + data.msg); }
         });
     }
 
-    function toggleBanUser(uid, action) {
-        fetch("/admin/ban_user", {
+    function banUserAction(uid, banType) {
+        let minutes = document.getElementById("ban_time_" + uid) ? document.getElementById("ban_time_" + uid).value : 0;
+        fetch("/admin/ban_user_advanced", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ user_id: uid, action: action })
+            body: JSON.stringify({ user_id: uid, ban_type: banType, minutes: minutes })
         })
         .then(res => res.json())
-        .then(data => { if(data.success) { location.reload(); } });
+        .then(data => { if(data.success) { showToast("✅ Đã cập nhật trạng thái Banned!"); setTimeout(() => { location.reload(); }, 800); } });
     }
 
     function updateMaintenance() {
@@ -579,7 +593,7 @@ def admin_dashboard():
             body: JSON.stringify({ message: msg })
         })
         .then(res => res.json())
-        .then(data => { if(data.success) { showToast("✅ Đã phát thông báo đến " + data.sent_count + " người dùng!"); document.getElementById("broadcastMsg").value = ""; } });
+        .then(data => { if(data.success) { showToast("✅ Đã gửi thông báo!"); document.getElementById("broadcastMsg").value = ""; } });
     }
     </script>
     </body></html>
@@ -595,22 +609,15 @@ def admin_create_custom_key():
         quantity = int(req_data.get("quantity", 1))
         max_uses = int(req_data.get("max_uses", 1))
         is_vip = bool(req_data.get("is_vip", False))
-        
         prefix = "VIP-" if is_vip else "ADMIN-"
         db = load_system_db()
-        
         for _ in range(quantity):
             new_key = prefix + ''.join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=8))
-            db["keys"][new_key] = {
-                "status": "chua_dung", "used_by": [], "created_at": time.time(),
-                "expire_at": None, "duration_hours": hours, "is_vip": is_vip,
-                "max_uses": max_uses, "total_bets_count": 0
-            }
+            db["keys"][new_key] = {"status": "chua_dung", "used_by": [], "created_at": time.time(), "expire_at": None, "duration_hours": hours, "is_vip": is_vip, "max_uses": max_uses, "total_bets_count": 0}
         save_system_db(db)
         return jsonify({"success": True})
     except Exception as e: return jsonify({"success": False, "msg": str(e)})
 
-# 🛠️ CỘNG HOẶC TRỪ GIỜ TRỰC TIẾP
 @app.route('/admin/modify_key_time', methods=['POST'])
 def admin_modify_key_time():
     if not session.get('admin_logged'): return jsonify({"success": False, "msg": "Chưa đăng nhập!"})
@@ -619,15 +626,12 @@ def admin_modify_key_time():
         key_code = req_data.get("key")
         hours = float(req_data.get("hours", 0))
         mode = req_data.get("mode", "add")
-        
         db = load_system_db()
         if key_code not in db["keys"]: return jsonify({"success": False, "msg": "Key không tồn tại!"})
-            
         k_data = db["keys"][key_code]
         now = time.time()
         current_expire = k_data.get("expire_at") or now
         if current_expire < now: current_expire = now
-        
         seconds_change = hours * 3600
         if mode == "add":
             new_expire = current_expire + seconds_change
@@ -635,24 +639,33 @@ def admin_modify_key_time():
         else:
             new_expire = current_expire - seconds_change
             k_data["duration_hours"] = max(0, k_data.get("duration_hours", 24) - hours)
-            
         k_data["expire_at"] = new_expire
         save_system_db(db)
         return jsonify({"success": True})
     except Exception as e: return jsonify({"success": False, "msg": str(e)})
 
-@app.route('/admin/ban_user', methods=['POST'])
-def admin_ban_user():
+# 🛠️ API XỬ LÝ KHÓA NGƯỜI DÙNG TẠM THỜI VÀ VĨNH VIỄN
+@app.route('/admin/ban_user_advanced', methods=['POST'])
+def admin_ban_user_advanced():
     if not session.get('admin_logged'): return jsonify({"success": False, "msg": "Chưa đăng nhập!"})
     try:
         req_data = request.json or {}
         uid = str(req_data.get("user_id"))
-        action = req_data.get("action")
+        ban_type = req_data.get("ban_type") # "temp", "perm", "unban"
+        minutes = float(req_data.get("minutes", 0))
+        
         db = load_system_db()
-        banned = set(db.get("banned_users", []))
-        if action == "ban": banned.add(uid)
-        else: banned.discard(uid)
-        db["banned_users"] = list(banned)
+        if "banned_users" not in db or isinstance(db["banned_users"], list):
+            db["banned_users"] = {}
+            
+        if ban_type == "unban":
+            if uid in db["banned_users"]: del db["banned_users"][uid]
+        elif ban_type == "perm":
+            db["banned_users"][uid] = {"type": "perm", "until": 0}
+        elif ban_type == "temp":
+            until_time = time.time() + (minutes * 60)
+            db["banned_users"][uid] = {"type": "temp", "until": until_time, "minutes": minutes}
+            
         save_system_db(db)
         return jsonify({"success": True})
     except Exception as e: return jsonify({"success": False, "msg": str(e)})
@@ -677,7 +690,6 @@ def admin_broadcast():
         all_users = set()
         for k, info in db.get("keys", {}).items():
             for uid in info.get("used_by", []): all_users.add(str(uid))
-            
         sent_count = 0
         def send_and_auto_delete(chat_id_target):
             try:
@@ -685,11 +697,9 @@ def admin_broadcast():
                 time.sleep(15)
                 bot.delete_message(chat_id_target, sent.message_id)
             except: pass
-
         for u in all_users:
             Thread(target=send_and_auto_delete, args=(u,), daemon=True).start()
             sent_count += 1
-            
         return jsonify({"success": True, "sent_count": sent_count})
     except Exception as e: return jsonify({"success": False, "msg": str(e)})
 
@@ -715,7 +725,6 @@ def admin_logout():
 
 user_data = {}
 data_lock = Lock()
-
 GAME_NAMES_VI = {"escape": "Vua Thoát Hiểm", "sprint": "Đua Tốc Độ"}
 
 def get_user_config(chat_id):
@@ -751,8 +760,7 @@ def increment_key_bets_count(chat_id):
             used_list = [str(x) for x in info.get("used_by", [])]
             if chat_id_str in used_list:
                 info["total_bets_count"] = int(info.get("total_bets_count", 0)) + 1
-                save_system_db(db)
-                break
+                save_system_db(db); break
     except: pass
 
 def verify_key_with_server(key_code, user_id):
@@ -760,21 +768,16 @@ def verify_key_with_server(key_code, user_id):
         db = load_system_db()
         keys_db = db.get("keys", {})
         user_id_str = str(user_id)
-        
         if key_code not in keys_db: return {"status": "error", "msg": "Mã hoặc Key không tồn tại!"}
-            
         k_data = keys_db[key_code]
         duration_secs = int(k_data.get("duration_hours", 24) * 3600)
         is_vip = bool(k_data.get("is_vip", False))
         used_by_list = [str(x) for x in k_data.get("used_by", [])]
         max_uses = int(k_data.get("max_uses", 1))
-        
         if user_id_str in used_by_list:
             expire_time = k_data.get("expire_at") or (time.time() + duration_secs)
             return {"status": "success", "msg": "Kích hoạt lại thành công!", "expire_at": expire_time, "is_vip": is_vip}
-            
         if len(used_by_list) >= max_uses: return {"status": "error", "msg": "Mã này đã đạt giới hạn số người!"}
-            
         used_by_list.append(user_id_str)
         k_data["used_by"] = used_by_list
         if len(used_by_list) >= max_uses: k_data["status"] = "da_dung"
@@ -784,15 +787,37 @@ def verify_key_with_server(key_code, user_id):
         return {"status": "success", "msg": "Kích hoạt thành công!", "expire_at": expire_time, "is_vip": is_vip}
     except Exception as e: return {"status": "error", "msg": f"Lỗi: {str(e)}"}
 
+# 🛠️ KIỂM TRA BANNED NGƯỜI DÙNG CHUẨN XÁC 100%
+def check_user_ban_status(chat_id):
+    chat_id_str = str(chat_id)
+    db = load_system_db()
+    banned_users = db.get("banned_users", {})
+    if chat_id_str in banned_users:
+        ban_info = banned_users[chat_id_str]
+        ban_type = ban_info.get("type")
+        if ban_type == "perm":
+            return True, "🚫 **Tài khoản của bạn đã bị KHÓA VĨNH VIỄN bởi Quản trị viên!**"
+        elif ban_type == "temp":
+            until_time = ban_info.get("until", 0)
+            now = time.time()
+            if now < until_time:
+                rem_m = max(1, int((until_time - now) // 60))
+                return True, f"🚫 **Tài khoản của bạn đã bị KHÓA! Vui lòng thử lại sau {rem_m} phút.**"
+            else:
+                del banned_users[chat_id_str]
+                save_system_db(db)
+    return False, ""
+
 def check_key_validity(chat_id):
+    is_banned, _ = check_user_ban_status(chat_id)
+    if is_banned:
+        cfg = get_user_config(chat_id)
+        cfg["has_valid_key"] = False
+        cfg["is_vip"] = False
+        return False
+
     cfg = get_user_config(chat_id)
     db = load_system_db()
-    
-    # KHI HỆ THỐNG BẬT BẢO TRÌ HOẶC NGƯỜI DÙNG BỊ KHÓA (BAN)
-    if str(chat_id) in db.get("banned_users", []):
-        cfg["has_valid_key"] = False
-        return False
-        
     keys_db = db.get("keys", {})
     now = time.time()
     vip_valid = False; key_valid = False
@@ -803,13 +828,9 @@ def check_key_validity(chat_id):
         if chat_id_str in used_list:
             expire_at = info.get("expire_at")
             if expire_at and now < expire_at:
-                key_valid = True
-                cfg["has_valid_key"] = True
-                cfg["key_expire_at"] = expire_at
+                key_valid = True; cfg["has_valid_key"] = True; cfg["key_expire_at"] = expire_at
                 if info.get("is_vip"):
-                    vip_valid = True
-                    cfg["is_vip"] = True
-                    cfg["vip_expire_at"] = expire_at
+                    vip_valid = True; cfg["is_vip"] = True; cfg["vip_expire_at"] = expire_at
                 try: session_manager.save_session_to_file(chat_id, expire_at)
                 except: pass
                 break
@@ -836,6 +857,12 @@ def send_welcome(message):
     try: bot.delete_message(chat_id, message.message_id)
     except: pass
     
+    # KIỂM TRA BANNED LẬP TỨC
+    is_banned, ban_msg = check_user_ban_status(chat_id)
+    if is_banned:
+        bot.send_message(chat_id, ban_msg, parse_mode="Markdown")
+        return
+
     db = load_system_db()
     if db.get("maintenance", {}).get("active"):
         notice = db.get("maintenance", {}).get("notice", "⚠️ Hệ thống đang bảo trì!")
@@ -860,34 +887,89 @@ def send_welcome(message):
         return
     show_main_menu(chat_id, message.message_id, is_new=True)
 
-@bot.callback_query_handler(func=lambda call: call.data == "btn_nhap_key")
-def callback_nhap_key_btn(call):
+@bot.callback_query_handler(func=lambda call: True)
+def callback_all_handler(call):
     chat_id = call.message.chat.id
-    cfg = get_user_config(chat_id)
-    cfg["waiting_for_key"] = True
-    cfg["prompt_msg_id"] = call.message.message_id
-    text = "🔑 **Vui lòng nhập mã Key của bạn vào đây**\n*(Ví dụ: `KEY-XW-XXXXXXXX` hoặc `ADMIN-XXXXXXXX`):*"
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("⬅️ Quay lại", callback_data="btn_back_start"))
-    try: bot.edit_message_text(text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-    except: pass
+    is_banned, ban_msg = check_user_ban_status(chat_id)
+    if is_banned:
+        try:
+            bot.answer_callback_query(call.id, "🚫 Bạn đã bị khóa tài khoản!", show_alert=True)
+            bot.edit_message_text(ban_msg, chat_id, call.message.message_id, parse_mode="Markdown")
+        except: pass
+        return
 
-@bot.callback_query_handler(func=lambda call: call.data == "btn_back_start")
-def callback_back_start(call):
-    chat_id = call.message.chat.id
-    cfg = get_user_config(chat_id)
-    cfg["waiting_for_key"] = False
-    web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
-    msg_text = "📜 **XWORLD LICENSE GATEWAY**\n───────────────────\n⚠️ **Bạn cần có Key bản quyền để sử dụng bot.**\n\n👉 Vui lòng chọn thao tác bên dưới:"
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        types.InlineKeyboardButton("🌐 Tới Trang Lấy Key (24h)", url=web_url),
-        types.InlineKeyboardButton("🔑 Nhập Key Kích Hoạt", callback_data="btn_nhap_key")
-    )
-    try: bot.edit_message_text(msg_text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-    except: pass
+    if call.data == "btn_nhap_key":
+        cfg = get_user_config(chat_id)
+        cfg["waiting_for_key"] = True
+        cfg["prompt_msg_id"] = call.message.message_id
+        text = "🔑 **Vui lòng nhập mã Key của bạn vào đây**\n*(Ví dụ: `KEY-XW-XXXXXXXX` hoặc `ADMIN-XXXXXXXX`):*"
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("⬅️ Quay lại", callback_data="btn_back_start"))
+        try: bot.edit_message_text(text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+        except: pass
+
+    elif call.data == "btn_back_start":
+        cfg = get_user_config(chat_id)
+        cfg["waiting_for_key"] = False
+        web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
+        msg_text = "📜 **XWORLD LICENSE GATEWAY**\n───────────────────\n⚠️ **Bạn cần có Key bản quyền để sử dụng bot.**\n\n👉 Vui lòng chọn thao tác bên dưới:"
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(
+            types.InlineKeyboardButton("🌐 Tới Trang Lấy Key (24h)", url=web_url),
+            types.InlineKeyboardButton("🔑 Nhập Key Kích Hoạt", callback_data="btn_nhap_key")
+        )
+        try: bot.edit_message_text(msg_text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+        except: pass
+
+    elif call.data == "back_to_main":
+        cfg = get_user_config(chat_id)
+        reset_user_wait_flags(cfg)
+        try: bot.answer_callback_query(call.id)
+        except: pass
+        show_main_menu(chat_id, call.message.message_id, is_new=False)
+
+    elif call.data.startswith("select_game_"):
+        cfg = get_user_config(chat_id)
+        reset_user_wait_flags(cfg)
+        if not check_key_validity(chat_id):
+            cfg["waiting_for_key"] = True
+            cfg["prompt_msg_id"] = call.message.message_id
+            web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
+            msg_text = "📜 **XWORLD LICENSE GATEWAY**\n───────────────────\n⚠️ **Key của bạn đã hết hạn!**\n\n👉 Vui lòng chọn thao tác bên dưới:"
+            markup = types.InlineKeyboardMarkup(row_width=1)
+            markup.add(
+                types.InlineKeyboardButton("🌐 Tới Trang Lấy Key (24h)", url=web_url),
+                types.InlineKeyboardButton("🔑 Nhập Key Kích Hoạt", callback_data="btn_nhap_key")
+            )
+            try:
+                bot.answer_callback_query(call.id, "⚠️ Key đã hết hạn!", show_alert=True)
+                bot.edit_message_text(msg_text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+            except: pass
+            return
+        game_type = call.data.split("_")[2]
+        cfg["active_game"] = game_type
+        try: bot.answer_callback_query(call.id)
+        except: pass
+        show_game_menu(chat_id, call.message.message_id, game_type)
+
+    elif call.data.startswith("back_to_game_"):
+        game_type = call.data.split("_")[3]
+        cfg = get_user_config(chat_id)
+        reset_user_wait_flags(cfg)
+        try: bot.answer_callback_query(call.id)
+        except: pass
+        show_game_menu(chat_id, call.message.message_id, game_type)
+
+    elif call.data.startswith("game_"):
+        callback_game_actions(call)
 
 def show_main_menu(chat_id, message_id, is_new=False):
+    is_banned, ban_msg = check_user_ban_status(chat_id)
+    if is_banned:
+        try: bot.edit_message_text(ban_msg, chat_id, message_id, parse_mode="Markdown")
+        except: bot.send_message(chat_id, ban_msg, parse_mode="Markdown")
+        return
+
     db = load_system_db()
     if db.get("maintenance", {}).get("active"):
         notice = db.get("maintenance", {}).get("notice", "⚠️ Hệ thống đang bảo trì!")
@@ -915,32 +997,6 @@ def show_main_menu(chat_id, message_id, is_new=False):
             bot.edit_message_text(msg_text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
             cfg["menu_msg_id"] = message_id
     except: pass
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("select_game_"))
-def callback_select_game(call):
-    chat_id = call.message.chat.id
-    cfg = get_user_config(chat_id)
-    reset_user_wait_flags(cfg)
-    if not check_key_validity(chat_id):
-        cfg["waiting_for_key"] = True
-        cfg["prompt_msg_id"] = call.message.message_id
-        web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
-        msg_text = "📜 **XWORLD LICENSE GATEWAY**\n───────────────────\n⚠️ **Key của bạn đã hết hạn!**\n\n👉 Vui lòng chọn thao tác bên dưới:"
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(
-            types.InlineKeyboardButton("🌐 Tới Trang Lấy Key (24h)", url=web_url),
-            types.InlineKeyboardButton("🔑 Nhập Key Kích Hoạt", callback_data="btn_nhap_key")
-        )
-        try:
-            bot.answer_callback_query(call.id, "⚠️ Key đã hết hạn!", show_alert=True)
-            bot.edit_message_text(msg_text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-        except: pass
-        return
-    game_type = call.data.split("_")[2]
-    cfg["active_game"] = game_type
-    try: bot.answer_callback_query(call.id)
-    except: pass
-    show_game_menu(chat_id, call.message.message_id, game_type)
 
 def show_game_menu(chat_id, message_id, game_type):
     cfg = get_user_config(chat_id)
@@ -984,16 +1040,6 @@ def show_game_menu(chat_id, message_id, game_type):
             cfg["menu_msg_id"] = sent.message_id
         except: pass
 
-@bot.callback_query_handler(func=lambda call: call.data == "back_to_main")
-def callback_back_main(call):
-    chat_id = call.message.chat.id
-    cfg = get_user_config(chat_id)
-    reset_user_wait_flags(cfg)
-    try: bot.answer_callback_query(call.id)
-    except: pass
-    show_main_menu(chat_id, call.message.message_id, is_new=False)
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("game_"))
 def callback_game_actions(call):
     chat_id = call.message.chat.id
     cfg = get_user_config(chat_id)
@@ -1043,8 +1089,7 @@ def callback_game_actions(call):
             try: bot.answer_callback_query(call.id, "⚠️ Key Thường không thể đổi số ván. Cần lên VIP!", show_alert=True)
             except: pass
             return
-        cfg["waiting_for_max_rounds_vip"] = game_type
-        cfg["prompt_msg_id"] = call.message.message_id
+        cfg["waiting_for_max_rounds_vip"] = game_type; cfg["prompt_msg_id"] = call.message.message_id
         try: bot.edit_message_text(f"🔢 **Nhập số ván muốn cược (Nhập `0` để chạy vô hạn):**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
         except: pass
 
@@ -1178,21 +1223,17 @@ def show_vip_settings_menu(chat_id, message_id, game_type):
     try: bot.edit_message_text(msg_text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
     except: pass
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("back_to_game_"))
-def callback_back_game(call):
-    chat_id = call.message.chat.id
-    game_type = call.data.split("_")[3]
-    cfg = get_user_config(chat_id)
-    reset_user_wait_flags(cfg)
-    try: bot.answer_callback_query(call.id)
-    except: pass
-    show_game_menu(chat_id, call.message.message_id, game_type)
-
 @bot.message_handler(func=lambda message: True)
 def handle_text_messages(message):
     chat_id = message.chat.id
     text = message.text.strip()
     
+    # KIỂM TRA BANNED KHI GỬI TIN NHẮN
+    is_banned, ban_msg = check_user_ban_status(chat_id)
+    if is_banned:
+        bot.send_message(chat_id, ban_msg, parse_mode="Markdown")
+        return
+
     db = load_system_db()
     if db.get("maintenance", {}).get("active"):
         notice = db.get("maintenance", {}).get("notice", "⚠️ Hệ thống đang bảo trì!")
@@ -1235,9 +1276,12 @@ def handle_text_messages(message):
         if res.get("status") == "success":
             if not res.get("is_vip", False): err_msg = "Mã này là Key Thường, không phải Code VIP!"
             else:
-                cfg["is_vip"] = True; cfg["vip_expire_at"] = res.get("expire_at", time.time() + 86400)
-                cfg["has_valid_key"] = True; cfg["key_expire_at"] = cfg["vip_expire_at"]
+                expire_time = res.get("expire_at", time.time() + 86400)
+                cfg["is_vip"] = True; cfg["vip_expire_at"] = expire_time
+                cfg["has_valid_key"] = True; cfg["key_expire_at"] = expire_time
                 cfg["waiting_for_vip_code"] = False
+                try: session_manager.save_session_to_file(chat_id, expire_time)
+                except: pass
                 prompt_id = cfg.get("prompt_msg_id")
                 if prompt_id:
                     try: bot.delete_message(chat_id, prompt_id)
