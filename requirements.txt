@@ -4,3 +4,4 @@ websocket-client
 pyTelegramBotAPI
 pymongo
 dnspython
+discord.py
