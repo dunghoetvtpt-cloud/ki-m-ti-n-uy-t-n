@@ -10,13 +10,23 @@ from flask import Flask, render_template_string, request, redirect, url_for, ses
 import telebot
 from telebot import types
 
+import discord
+from discord.ext import commands
+
 import session_manager
 
 # ---------------------------------------------------------
-# CẤU HÌNH BOT TELEGRAM & FLASK WEB
+# CẤU HÌNH BOT TELEGRAM, DISCORD & FLASK WEB
 # ---------------------------------------------------------
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, parse_mode="Markdown")
+DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN")
+
+bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, parse_mode="Markdown") if TELEGRAM_BOT_TOKEN else None
+
+# Khởi tạo Discord Bot
+intents = discord.Intents.default()
+intents.message_content = True
+discord_bot = commands.Bot(command_prefix="!", intents=intents) if DISCORD_BOT_TOKEN else None
 
 app = Flask(__name__)
 app.secret_key = "dung_license_secret_key_1612012"
@@ -142,7 +152,7 @@ def home():
                     <div class="key-text" id="keyText">{{ new_key }}</div>
                     <button class="btn-copy" onclick="copyKey()"><i class="fa-regular fa-copy"></i> Sao Chép Key Ngay</button>
                 </div>
-                <p style="color: #4ade80; margin-top: 15px; font-weight: 600; font-size: 13px;">✨ Đã tạo key thành công! Dán vào Bot Telegram nhé.</p>
+                <p style="color: #4ade80; margin-top: 15px; font-weight: 600; font-size: 13px;">✨ Đã tạo key thành công! Dán vào Bot nhé.</p>
             {% else %}
                 <a href="/get_link4m" class="btn"><i class="fa-solid fa-rocket"></i> TIẾN HÀNH LẤY KEY (24H)</a>
             {% endif %}
@@ -243,7 +253,6 @@ def admin_dashboard():
     used_keys_count = sum(1 for k, info in keys_db.items() if len(info.get('used_by', [])) > 0)
     unused_keys_count = total_keys_count - used_keys_count
 
-    # Tổng hợp danh sách người dùng
     users_list = {}
     for k, info in keys_db.items():
         for uid in info.get("used_by", []):
@@ -335,14 +344,12 @@ def admin_dashboard():
             <a href="/admin/logout" class="logout"><i class="fa-solid fa-right-from-bracket"></i> Đăng xuất</a>
         </div>
         
-        <!-- THANH CHUYỂN TAB -->
         <div class="tabs">
             <button class="tab-btn active" onclick="switchTab('tab-keys')"><i class="fa-solid fa-key"></i> 1. Quản Lý Key & VIP</button>
             <button class="tab-btn" onclick="switchTab('tab-users')"><i class="fa-solid fa-users-gear"></i> 2. Quản Lý Người Dùng</button>
             <button class="tab-btn" onclick="switchTab('tab-system')"><i class="fa-solid fa-tower-broadcast"></i> 3. Hệ Thống & Bảo Trì</button>
         </div>
 
-        <!-- TAB 1: QUẢN LÝ KEY -->
         <div id="tab-keys" class="tab-content active">
             <div class="stats-grid">
                 <div class="stat-card">
@@ -430,13 +437,12 @@ def admin_dashboard():
             </div>
         </div>
 
-        <!-- TAB 2: QUẢN LÝ NGƯỜI DÙNG & KHÓA (BAN) -->
         <div id="tab-users" class="tab-content">
             <h3 style="font-size: 15px; color: #38bdf8; margin-bottom: 12px;"><i class="fa-solid fa-users"></i> Quản Lý & Khóa Người Dùng</h3>
             <div class="table-responsive">
                 <table>
                     <tr>
-                        <th>Telegram Chat ID</th>
+                        <th>Chat ID</th>
                         <th>Cấp Độ</th>
                         <th>Tổng Ván Cược</th>
                         <th>Trạng Thái Khóa (Ban)</th>
@@ -482,7 +488,6 @@ def admin_dashboard():
             </div>
         </div>
 
-        <!-- TAB 3: HỆ THỐNG & BẢO TRÌ -->
         <div id="tab-system" class="tab-content">
             <div style="background: #0b0f19; padding: 20px; border-radius: 16px; border: 1px solid #334155; margin-bottom: 20px;">
                 <h3 style="font-size: 15px; color: #f87171; margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
@@ -511,7 +516,6 @@ def admin_dashboard():
                 <button class="btn-vip" style="width: 200px;" onclick="sendBroadcast()"><i class="fa-solid fa-paper-plane"></i> Gửi Thông Báo Tức Thời</button>
             </div>
         </div>
-
     </div>
 
     <script>
@@ -520,18 +524,15 @@ def admin_dashboard():
         t.innerText = msg; t.style.display = "block";
         setTimeout(() => { t.style.display = "none"; }, 2500);
     }
-
     function switchTab(tabId) {
         document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
         event.currentTarget.classList.add('active');
         document.getElementById(tabId).classList.add('active');
     }
-
     function copyThisKey(code) {
         navigator.clipboard.writeText(code).then(() => { showToast("✅ Đã sao chép mã!"); });
     }
-
     function createCustomKey(isVip) {
         let hours = document.getElementById("customHours").value;
         let qty = document.getElementById("customQty").value;
@@ -544,7 +545,6 @@ def admin_dashboard():
         .then(res => res.json())
         .then(data => { if(data.success) { location.reload(); } else { alert("Lỗi: " + data.msg); } });
     }
-
     function modifyKeyTime(key, mode) {
         let hours = document.getElementById("time_" + key).value;
         fetch("/admin/modify_key_time", {
@@ -560,7 +560,6 @@ def admin_dashboard():
             } else { alert("Lỗi: " + data.msg); }
         });
     }
-
     function banUserAction(uid, banType) {
         let minutes = document.getElementById("ban_time_" + uid) ? document.getElementById("ban_time_" + uid).value : 0;
         fetch("/admin/ban_user_advanced", {
@@ -571,7 +570,6 @@ def admin_dashboard():
         .then(res => res.json())
         .then(data => { if(data.success) { showToast("✅ Đã cập nhật trạng thái Banned!"); setTimeout(() => { location.reload(); }, 800); } });
     }
-
     function updateMaintenance() {
         let active = document.getElementById("maintSwitch").checked;
         let notice = document.getElementById("maintNotice").value;
@@ -583,7 +581,6 @@ def admin_dashboard():
         .then(res => res.json())
         .then(data => { if(data.success) { showToast("✅ Cập nhật bảo trì thành công!"); setTimeout(() => { location.reload(); }, 1000); } });
     }
-
     function sendBroadcast() {
         let msg = document.getElementById("broadcastMsg").value;
         if(!msg) { alert("Vui lòng nhập nội dung!"); return; }
@@ -644,14 +641,13 @@ def admin_modify_key_time():
         return jsonify({"success": True})
     except Exception as e: return jsonify({"success": False, "msg": str(e)})
 
-# 🛠️ KHÓA NGƯỜI DÙNG & TỰ CẬP NHẬT GIAO DIỆN
 @app.route('/admin/ban_user_advanced', methods=['POST'])
 def admin_ban_user_advanced():
     if not session.get('admin_logged'): return jsonify({"success": False, "msg": "Chưa đăng nhập!"})
     try:
         req_data = request.json or {}
         uid = str(req_data.get("user_id"))
-        ban_type = req_data.get("ban_type") # "temp", "perm", "unban"
+        ban_type = req_data.get("ban_type")
         minutes = float(req_data.get("minutes", 0))
         
         db = load_system_db()
@@ -667,14 +663,10 @@ def admin_ban_user_advanced():
             db["banned_users"][uid] = {"type": "temp", "until": until_time, "minutes": minutes}
             
         save_system_db(db)
-        
-        # 🚀 Đổi giao diện Telegram của người dùng ngay lập tức!
         broadcast_system_status_change()
-        
         return jsonify({"success": True})
     except Exception as e: return jsonify({"success": False, "msg": str(e)})
 
-# 🛠️ BẬT TẮT BẢO TRÌ & TỰ CẬP NHẬT GIAO DIỆN
 @app.route('/admin/update_maintenance', methods=['POST'])
 def admin_update_maintenance():
     if not session.get('admin_logged'): return jsonify({"success": False, "msg": "Chưa đăng nhập!"})
@@ -683,10 +675,7 @@ def admin_update_maintenance():
         db = load_system_db()
         db["maintenance"] = {"active": bool(req_data.get("active")), "notice": req_data.get("notice", "")}
         save_system_db(db)
-        
-        # 🚀 Ép khôi phục hoặc khóa giao diện Telegram lập tức!
         broadcast_system_status_change()
-        
         return jsonify({"success": True})
     except Exception as e: return jsonify({"success": False, "msg": str(e)})
 
@@ -702,9 +691,10 @@ def admin_broadcast():
         sent_count = 0
         def send_and_auto_delete(chat_id_target):
             try:
-                sent = bot.send_message(chat_id_target, f"📢 **THÔNG BÁO TỪ HỆ THỐNG:**\n\n{msg_text}\n\n*(Tin nhắn tự xóa sau 15 giây)*", parse_mode="Markdown")
-                time.sleep(15)
-                bot.delete_message(chat_id_target, sent.message_id)
+                if bot:
+                    sent = bot.send_message(chat_id_target, f"📢 **THÔNG BÁO TỪ HỆ THỐNG:**\n\n{msg_text}\n\n*(Tin nhắn tự xóa sau 15 giây)*", parse_mode="Markdown")
+                    time.sleep(15)
+                    bot.delete_message(chat_id_target, sent.message_id)
             except: pass
         for u in all_users:
             Thread(target=send_and_auto_delete, args=(u,), daemon=True).start()
@@ -855,7 +845,6 @@ def check_key_validity(chat_id):
     return False
 
 def broadcast_system_status_change():
-    """Ép cập nhật trực tiếp tin nhắn menu Telegram của tất cả người dùng khi Admin đổi trạng thái"""
     def worker():
         with data_lock:
             chat_ids = list(user_data.keys())
@@ -863,7 +852,7 @@ def broadcast_system_status_change():
             try:
                 cfg = user_data.get(cid, {})
                 menu_id = cfg.get("menu_msg_id") or cfg.get("prompt_msg_id")
-                if menu_id:
+                if menu_id and bot:
                     is_banned, ban_msg = check_user_ban_status(cid)
                     db = load_system_db()
                     is_maint = db.get("maintenance", {}).get("active", False)
@@ -883,138 +872,298 @@ def reset_user_wait_flags(cfg):
     cfg["waiting_for_max_losses"] = None; cfg["waiting_for_stop_loss"] = None
     cfg["waiting_for_take_profit"] = None; cfg["waiting_for_max_rounds_vip"] = None
 
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    chat_id = message.chat.id
-    try: bot.delete_message(chat_id, message.message_id)
-    except: pass
-    
-    is_banned, ban_msg = check_user_ban_status(chat_id)
-    if is_banned:
-        bot.send_message(chat_id, ban_msg, parse_mode="Markdown")
-        return
-
-    db = load_system_db()
-    if db.get("maintenance", {}).get("active"):
-        notice = db.get("maintenance", {}).get("notice", "⚠️ Hệ thống đang bảo trì!")
-        bot.send_message(chat_id, f"🛠️ **THÔNG BÁO BẢO TRÌ** 🛠️\n━━━━━━━━━━━━━━━━━━━\n{notice}", parse_mode="Markdown")
-        return
-
-    cfg = get_user_config(chat_id)
-    reset_user_wait_flags(cfg)
-    if not check_key_validity(chat_id):
-        cfg["waiting_for_key"] = True
-        web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
-        msg_text = "📜 **XWORLD LICENSE GATEWAY**\n───────────────────\n⚠️ **Key của bạn đã hết hạn hoặc chưa kích hoạt.**\n\n👉 Vui lòng chọn thao tác bên dưới:"
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(
-            types.InlineKeyboardButton("🌐 Tới Trang Lấy Key (24h)", url=web_url),
-            types.InlineKeyboardButton("🔑 Nhập Key Kích Hoạt", callback_data="btn_nhap_key")
-        )
-        try:
-            sent = bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
-            cfg["prompt_msg_id"] = sent.message_id
+# ---------------------------------------------------------
+# TELEGRAM BOT LOGIC
+# ---------------------------------------------------------
+if bot:
+    @bot.message_handler(commands=['start'])
+    def tele_start(message):
+        chat_id = message.chat.id
+        try: bot.delete_message(chat_id, message.message_id)
         except: pass
-        return
-    show_main_menu(chat_id, message.message_id, is_new=True)
+        
+        is_banned, ban_msg = check_user_ban_status(chat_id)
+        if is_banned:
+            bot.send_message(chat_id, ban_msg, parse_mode="Markdown")
+            return
 
-@bot.callback_query_handler(func=lambda call: True)
-def callback_all_handler(call):
-    chat_id = call.message.chat.id
-    is_banned, ban_msg = check_user_ban_status(chat_id)
-    if is_banned:
-        try:
-            bot.answer_callback_query(call.id, "🚫 Bạn đã bị khóa tài khoản!", show_alert=True)
-            bot.edit_message_text(ban_msg, chat_id, call.message.message_id, parse_mode="Markdown")
-        except: pass
-        return
+        db = load_system_db()
+        if db.get("maintenance", {}).get("active"):
+            notice = db.get("maintenance", {}).get("notice", "⚠️ Hệ thống đang bảo trì!")
+            bot.send_message(chat_id, f"🛠️ **THÔNG BÁO BẢO TRÌ** 🛠️\n━━━━━━━━━━━━━━━━━━━\n{notice}", parse_mode="Markdown")
+            return
 
-    db = load_system_db()
-    if db.get("maintenance", {}).get("active"):
-        notice = db.get("maintenance", {}).get("notice", "⚠️ Hệ thống đang bảo trì!")
-        try:
-            bot.answer_callback_query(call.id, "🛠️ Hệ thống đang bảo trì!", show_alert=True)
-            bot.edit_message_text(f"🛠️ **THÔNG BÁO BẢO TRÌ** 🛠️\n━━━━━━━━━━━━━━━━━━━\n{notice}", chat_id, call.message.message_id, parse_mode="Markdown")
-        except: pass
-        return
-
-    if call.data == "btn_nhap_key":
-        cfg = get_user_config(chat_id)
-        cfg["waiting_for_key"] = True
-        cfg["prompt_msg_id"] = call.message.message_id
-        text = "🔑 **Vui lòng nhập mã Key của bạn vào đây**\n*(Ví dụ: `KEY-XW-XXXXXXXX` hoặc `ADMIN-XXXXXXXX`):*"
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("⬅️ Quay lại", callback_data="btn_back_start"))
-        try: bot.edit_message_text(text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-        except: pass
-
-    elif call.data == "btn_back_start":
-        cfg = get_user_config(chat_id)
-        cfg["waiting_for_key"] = False
-        web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
-        msg_text = "📜 **XWORLD LICENSE GATEWAY**\n───────────────────\n⚠️ **Bạn cần có Key bản quyền để sử dụng bot.**\n\n👉 Vui lòng chọn thao tác bên dưới:"
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(
-            types.InlineKeyboardButton("🌐 Tới Trang Lấy Key (24h)", url=web_url),
-            types.InlineKeyboardButton("🔑 Nhập Key Kích Hoạt", callback_data="btn_nhap_key")
-        )
-        try: bot.edit_message_text(msg_text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-        except: pass
-
-    elif call.data == "back_to_main":
-        cfg = get_user_config(chat_id)
-        reset_user_wait_flags(cfg)
-        try: bot.answer_callback_query(call.id)
-        except: pass
-        show_main_menu(chat_id, call.message.message_id, is_new=False)
-
-    elif call.data.startswith("select_game_"):
         cfg = get_user_config(chat_id)
         reset_user_wait_flags(cfg)
         if not check_key_validity(chat_id):
             cfg["waiting_for_key"] = True
-            cfg["prompt_msg_id"] = call.message.message_id
             web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
-            msg_text = "📜 **XWORLD LICENSE GATEWAY**\n───────────────────\n⚠️ **Key của bạn đã hết hạn!**\n\n👉 Vui lòng chọn thao tác bên dưới:"
+            msg_text = "📜 **XWORLD LICENSE GATEWAY**\n───────────────────\n⚠️ **Key của bạn đã hết hạn hoặc chưa kích hoạt.**\n\n👉 Vui lòng chọn thao tác bên dưới:"
             markup = types.InlineKeyboardMarkup(row_width=1)
             markup.add(
                 types.InlineKeyboardButton("🌐 Tới Trang Lấy Key (24h)", url=web_url),
                 types.InlineKeyboardButton("🔑 Nhập Key Kích Hoạt", callback_data="btn_nhap_key")
             )
             try:
-                bot.answer_callback_query(call.id, "⚠️ Key đã hết hạn!", show_alert=True)
-                bot.edit_message_text(msg_text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+                sent = bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
+                cfg["prompt_msg_id"] = sent.message_id
             except: pass
             return
-        game_type = call.data.split("_")[2]
-        cfg["active_game"] = game_type
-        try: bot.answer_callback_query(call.id)
-        except: pass
-        show_game_menu(chat_id, call.message.message_id, game_type)
+        show_main_menu(chat_id, message.message_id, is_new=True)
 
-    elif call.data.startswith("back_to_game_"):
-        game_type = call.data.split("_")[3]
+    @bot.callback_query_handler(func=lambda call: True)
+    def callback_all_handler(call):
+        chat_id = call.message.chat.id
+        is_banned, ban_msg = check_user_ban_status(chat_id)
+        if is_banned:
+            try:
+                bot.answer_callback_query(call.id, "🚫 Bạn đã bị khóa tài khoản!", show_alert=True)
+                bot.edit_message_text(ban_msg, chat_id, call.message.message_id, parse_mode="Markdown")
+            except: pass
+            return
+
+        db = load_system_db()
+        if db.get("maintenance", {}).get("active"):
+            notice = db.get("maintenance", {}).get("notice", "⚠️ Hệ thống đang bảo trì!")
+            try:
+                bot.answer_callback_query(call.id, "🛠️ Hệ thống đang bảo trì!", show_alert=True)
+                bot.edit_message_text(f"🛠️ **THÔNG BÁO BẢO TRÌ** 🛠️\n━━━━━━━━━━━━━━━━━━━\n{notice}", chat_id, call.message.message_id, parse_mode="Markdown")
+            except: pass
+            return
+
+        if call.data == "btn_nhap_key":
+            cfg = get_user_config(chat_id)
+            cfg["waiting_for_key"] = True
+            cfg["prompt_msg_id"] = call.message.message_id
+            text = "🔑 **Vui lòng nhập mã Key của bạn vào đây**\n*(Ví dụ: `KEY-XW-XXXXXXXX` hoặc `ADMIN-XXXXXXXX`):*"
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("⬅️ Quay lại", callback_data="btn_back_start"))
+            try: bot.edit_message_text(text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+            except: pass
+
+        elif call.data == "btn_back_start":
+            cfg = get_user_config(chat_id)
+            cfg["waiting_for_key"] = False
+            web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
+            msg_text = "📜 **XWORLD LICENSE GATEWAY**\n───────────────────\n⚠️ **Bạn cần có Key bản quyền để sử dụng bot.**\n\n👉 Vui lòng chọn thao tác bên dưới:"
+            markup = types.InlineKeyboardMarkup(row_width=1)
+            markup.add(
+                types.InlineKeyboardButton("🌐 Tới Trang Lấy Key (24h)", url=web_url),
+                types.InlineKeyboardButton("🔑 Nhập Key Kích Hoạt", callback_data="btn_nhap_key")
+            )
+            try: bot.edit_message_text(msg_text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+            except: pass
+
+        elif call.data == "back_to_main":
+            cfg = get_user_config(chat_id)
+            reset_user_wait_flags(cfg)
+            try: bot.answer_callback_query(call.id)
+            except: pass
+            show_main_menu(chat_id, call.message.message_id, is_new=False)
+
+        elif call.data.startswith("select_game_"):
+            cfg = get_user_config(chat_id)
+            reset_user_wait_flags(cfg)
+            if not check_key_validity(chat_id):
+                cfg["waiting_for_key"] = True
+                cfg["prompt_msg_id"] = call.message.message_id
+                web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
+                msg_text = "📜 **XWORLD LICENSE GATEWAY**\n───────────────────\n⚠️ **Key của bạn đã hết hạn!**\n\n👉 Vui lòng chọn thao tác bên dưới:"
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                markup.add(
+                    types.InlineKeyboardButton("🌐 Tới Trang Lấy Key (24h)", url=web_url),
+                    types.InlineKeyboardButton("🔑 Nhập Key Kích Hoạt", callback_data="btn_nhap_key")
+                )
+                try:
+                    bot.answer_callback_query(call.id, "⚠️ Key đã hết hạn!", show_alert=True)
+                    bot.edit_message_text(msg_text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+                except: pass
+                return
+            game_type = call.data.split("_")[2]
+            cfg["active_game"] = game_type
+            try: bot.answer_callback_query(call.id)
+            except: pass
+            show_game_menu(chat_id, call.message.message_id, game_type)
+
+        elif call.data.startswith("back_to_game_"):
+            game_type = call.data.split("_")[3]
+            cfg = get_user_config(chat_id)
+            reset_user_wait_flags(cfg)
+            try: bot.answer_callback_query(call.id)
+            except: pass
+            show_game_menu(chat_id, call.message.message_id, game_type)
+
+        elif call.data.startswith("game_"):
+            callback_game_actions(call)
+
+    @bot.message_handler(func=lambda message: True)
+    def handle_text_messages(message):
+        chat_id = message.chat.id
+        text = message.text.strip()
+        
+        is_banned, ban_msg = check_user_ban_status(chat_id)
+        if is_banned:
+            bot.send_message(chat_id, ban_msg, parse_mode="Markdown")
+            return
+
+        db = load_system_db()
+        if db.get("maintenance", {}).get("active"):
+            notice = db.get("maintenance", {}).get("notice", "⚠️ Hệ thống đang bảo trì!")
+            bot.send_message(chat_id, f"🛠️ **THÔNG BÁO BẢO TRÌ** 🛠️\n━━━━━━━━━━━━━━━━━━━\n{notice}", parse_mode="Markdown")
+            return
+
         cfg = get_user_config(chat_id)
-        reset_user_wait_flags(cfg)
-        try: bot.answer_callback_query(call.id)
-        except: pass
-        show_game_menu(chat_id, call.message.message_id, game_type)
 
-    elif call.data.startswith("game_"):
-        callback_game_actions(call)
+        game_target_bet = cfg.get("waiting_for_bet")
+        if game_target_bet:
+            try: bot.delete_message(chat_id, message.message_id)
+            except: pass
+            prompt_id = cfg.get("prompt_msg_id")
+            try:
+                val = float(text)
+                if val <= 0: raise ValueError()
+                g_cfg = cfg[game_target_bet]
+                if game_target_bet == "sprint": g_cfg["bet_amount_total"] = str(val)
+                else: g_cfg["base_bet"] = val
+                cfg["waiting_for_bet"] = None
+                show_game_menu(chat_id, prompt_id, game_target_bet)
+                return
+            except:
+                bot.send_message(chat_id, "⚠️ Vui lòng chỉ nhập số tiền cược hợp lệ!")
+                return
+
+        game_max_rounds_vip = cfg.get("waiting_for_max_rounds_vip")
+        if game_max_rounds_vip:
+            try: bot.delete_message(chat_id, message.message_id); val = int(text)
+            except: val = 100
+            cfg[game_max_rounds_vip]["max_rounds"] = val
+            cfg["waiting_for_max_rounds_vip"] = None
+            show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_max_rounds_vip)
+            return
+
+        if cfg.get("waiting_for_vip_code"):
+            try: bot.delete_message(chat_id, message.message_id)
+            except: pass
+            res = verify_key_with_server(text, str(chat_id))
+            if res.get("status") == "success":
+                if not res.get("is_vip", False): err_msg = "Mã này là Key Thường, không phải Code VIP!"
+                else:
+                    expire_time = res.get("expire_at", time.time() + 86400)
+                    cfg["is_vip"] = True; cfg["vip_expire_at"] = expire_time
+                    cfg["has_valid_key"] = True; cfg["key_expire_at"] = expire_time
+                    cfg["waiting_for_vip_code"] = False
+                    try: session_manager.save_session_to_file(chat_id, expire_time)
+                    except: pass
+                    prompt_id = cfg.get("prompt_msg_id")
+                    if prompt_id:
+                        try: bot.delete_message(chat_id, prompt_id)
+                        except: pass
+                    active_g = cfg.get("active_game", "escape")
+                    show_game_menu(chat_id, cfg.get("menu_msg_id"), active_g)
+                    return
+            else: err_msg = res.get("msg", "Mã Code VIP không chính xác hoặc đã bị xóa!")
+
+            def send_and_auto_delete_err():
+                try:
+                    if bot:
+                        msg = bot.send_message(chat_id, f"❌ **{err_msg}**", parse_mode="Markdown")
+                        time.sleep(3)
+                        bot.delete_message(chat_id, msg.message_id)
+                except: pass
+            Thread(target=send_and_auto_delete_err, daemon=True).start()
+            return
+
+        game_max_loss = cfg.get("waiting_for_max_losses")
+        if game_max_loss:
+            try: bot.delete_message(chat_id, message.message_id); val = int(text)
+            except: val = 0
+            cfg[game_max_loss]["max_continuous_losses"] = val
+            cfg["waiting_for_max_losses"] = None
+            show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_max_loss)
+            return
+
+        game_stop_loss = cfg.get("waiting_for_stop_loss")
+        if game_stop_loss:
+            try: bot.delete_message(chat_id, message.message_id); val = float(text)
+            except: val = 0.0
+            cfg[game_stop_loss]["stop_loss_amount"] = val
+            cfg["waiting_for_stop_loss"] = None
+            show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_stop_loss)
+            return
+
+        game_take_profit = cfg.get("waiting_for_take_profit")
+        if game_take_profit:
+            try: bot.delete_message(chat_id, message.message_id); val = float(text)
+            except: val = 0.0
+            cfg[game_take_profit]["take_profit_amount"] = val
+            cfg["waiting_for_take_profit"] = None
+            show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_take_profit)
+            return
+
+        if cfg.get("waiting_for_key"):
+            try: bot.delete_message(chat_id, message.message_id)
+            except: pass
+            res = verify_key_with_server(text, str(chat_id))
+            if res.get("status") == "success":
+                cfg["has_valid_key"] = True; cfg["waiting_for_key"] = False
+                cfg["is_vip"] = res.get("is_vip", False)
+                cfg["key_expire_at"] = res.get("expire_at", time.time() + 86400)
+                session_manager.save_session_to_file(chat_id, cfg["key_expire_at"])
+                prompt_id = cfg.get("prompt_msg_id")
+                if prompt_id:
+                    try: bot.delete_message(chat_id, prompt_id)
+                    except: pass
+                show_main_menu(chat_id, message.message_id, is_new=True)
+            else:
+                err_msg = res.get("msg", "Key không hợp lệ hoặc đã được sử dụng!")
+                web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
+                markup = types.InlineKeyboardMarkup()
+                markup.add(
+                    types.InlineKeyboardButton("🌐 Lấy Key Mới (24h)", url=web_url),
+                    types.InlineKeyboardButton("🔑 Nhập Key Kích Hoạt", callback_data="btn_nhap_key")
+                )
+                bot.send_message(chat_id, f"❌ **{err_msg}**", reply_markup=markup, parse_mode="Markdown")
+            return
+
+        game_target_link = cfg.get("waiting_for_link")
+        if game_target_link:
+            try: bot.delete_message(chat_id, message.message_id)
+            except: pass
+            prompt_id = cfg.get("prompt_msg_id")
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton("🔙 Trở lại", callback_data=f"back_to_game_{game_target_link}"))
+            g_cfg = cfg[game_target_link]
+            if "userId=" in text and "secretKey=" in text:
+                try:
+                    parsed_url = urlparse(text); query_params = parse_qs(parsed_url.query)
+                    uid_str = query_params.get("userId", [None])[0]; skey = query_params.get("secretKey", [None])[0]
+                    if uid_str and skey:
+                        uid = int(uid_str); g_cfg["accounts"][uid] = skey; cfg["waiting_for_link"] = None
+                        if prompt_id:
+                            try: bot.edit_message_text(f"✅ **Thêm nick thành công!** (`{uid}`)", chat_id, prompt_id, reply_markup=markup, parse_mode="Markdown")
+                            except: pass
+                        return
+                except: pass
+            return
+
+        if not text.startswith("/"):
+            try: bot.delete_message(chat_id, message.message_id)
+            except: pass
 
 def show_main_menu(chat_id, message_id, is_new=False):
     is_banned, ban_msg = check_user_ban_status(chat_id)
     if is_banned:
-        try: bot.edit_message_text(ban_msg, chat_id, message_id, parse_mode="Markdown")
-        except: bot.send_message(chat_id, ban_msg, parse_mode="Markdown")
+        if bot:
+            try: bot.edit_message_text(ban_msg, chat_id, message_id, parse_mode="Markdown")
+            except: bot.send_message(chat_id, ban_msg, parse_mode="Markdown")
         return
 
     db = load_system_db()
     if db.get("maintenance", {}).get("active"):
         notice = db.get("maintenance", {}).get("notice", "⚠️ Hệ thống đang bảo trì!")
-        try: bot.edit_message_text(f"🛠️ **THÔNG BÁO BẢO TRÌ** 🛠️\n━━━━━━━━━━━━━━━━━━━\n{notice}", chat_id, message_id, parse_mode="Markdown")
-        except: bot.send_message(chat_id, f"🛠️ **THÔNG BÁO BẢO TRÌ** 🛠️\n━━━━━━━━━━━━━━━━━━━\n{notice}", parse_mode="Markdown")
+        if bot:
+            try: bot.edit_message_text(f"🛠️ **THÔNG BÁO BẢO TRÌ** 🛠️\n━━━━━━━━━━━━━━━━━━━\n{notice}", chat_id, message_id, parse_mode="Markdown")
+            except: bot.send_message(chat_id, f"🛠️ **THÔNG BÁO BẢO TRÌ** 🛠️\n━━━━━━━━━━━━━━━━━━━\n{notice}", parse_mode="Markdown")
         return
 
     cfg = get_user_config(chat_id)
@@ -1029,14 +1178,15 @@ def show_main_menu(chat_id, message_id, is_new=False):
         types.InlineKeyboardButton("🕹️ Vua Thoát Hiểm", callback_data="select_game_escape"),
         types.InlineKeyboardButton("🏃 Đua Tốc Độ", callback_data="select_game_sprint")
     )
-    try:
-        if is_new:
-            sent = bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
-            cfg["menu_msg_id"] = sent.message_id
-        else:
-            bot.edit_message_text(msg_text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
-            cfg["menu_msg_id"] = message_id
-    except: pass
+    if bot:
+        try:
+            if is_new:
+                sent = bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
+                cfg["menu_msg_id"] = sent.message_id
+            else:
+                bot.edit_message_text(msg_text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
+                cfg["menu_msg_id"] = message_id
+        except: pass
 
 def show_game_menu(chat_id, message_id, game_type):
     cfg = get_user_config(chat_id)
@@ -1073,12 +1223,13 @@ def show_game_menu(chat_id, message_id, game_type):
         types.InlineKeyboardButton("📊 Thống Kê", callback_data=f"game_{game_type}_status"),
         types.InlineKeyboardButton("🔙 Quay lại", callback_data="back_to_main")
     )
-    try: bot.edit_message_text(msg_text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
-    except:
-        try:
-            sent = bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
-            cfg["menu_msg_id"] = sent.message_id
-        except: pass
+    if bot:
+        try: bot.edit_message_text(msg_text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
+        except:
+            try:
+                sent = bot.send_message(chat_id, msg_text, reply_markup=markup, parse_mode="Markdown")
+                cfg["menu_msg_id"] = sent.message_id
+            except: pass
 
 def callback_game_actions(call):
     chat_id = call.message.chat.id
@@ -1093,10 +1244,11 @@ def callback_game_actions(call):
             types.InlineKeyboardButton("🌐 Tới Trang Lấy Key (24h)", url=web_url),
             types.InlineKeyboardButton("🔑 Nhập Key Kích Hoạt", callback_data="btn_nhap_key")
         )
-        try:
-            bot.answer_callback_query(call.id, "⚠️ Key đã hết hạn!", show_alert=True)
-            bot.edit_message_text(msg_text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
-        except: pass
+        if bot:
+            try:
+                bot.answer_callback_query(call.id, "⚠️ Key đã hết hạn!", show_alert=True)
+                bot.edit_message_text(msg_text, chat_id, call.message.message_id, reply_markup=markup, parse_mode="Markdown")
+            except: pass
         return
     parts = call.data.split("_")
     game_type = parts[1]; action = "_".join(parts[2:])
@@ -1111,8 +1263,9 @@ def callback_game_actions(call):
             st["total_profit"] = Decimal("0"); st["total_bets"] = 0
             st["wins"] = 0; st["losses"] = 0; st["streak_loss"] = 0
         if "max_rounds" not in g_cfg: g_cfg["max_rounds"] = 100 if not cfg.get("is_vip") else 0
-        try: bot.answer_callback_query(call.id, "🔄 Đã reset thống kê về 0!")
-        except: pass
+        if bot:
+            try: bot.answer_callback_query(call.id, "🔄 Đã reset thống kê về 0!")
+            except: pass
         show_game_menu(chat_id, call.message.message_id, game_type)
 
     elif action == "vip_menu":
@@ -1120,74 +1273,87 @@ def callback_game_actions(call):
             cfg["waiting_for_vip_code"] = True
             cfg["prompt_msg_id"] = call.message.message_id
             msg_vip = "👑 **TÍNH NĂNG VIP BỊ KHÓA** 🔒\n━━━━━━━━━━━━━━━━━━━\n✨ *Key Thường giới hạn cố định 100 ván.*\n✨ *Nhập Mã Code VIP để mở khóa:*\n• 🔢 Thay đổi giới hạn số ván (Vô hạn hoặc tùy chọn)\n• 🛑 Tự dừng khi thua liên tiếp X ván\n• 📉 Tự ngắt khi chạm ngưỡng Cắt Lỗ\n• 🎯 Tự ngắt khi đạt mục tiêu Chốt Lời\n\n👉 **Vui lòng nhập Mã Code VIP do Admin cấp để mở khóa:**"
-            try: bot.edit_message_text(msg_vip, chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
-            except: pass
+            if bot:
+                try: bot.edit_message_text(msg_vip, chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
+                except: pass
         else: show_vip_settings_menu(chat_id, call.message.message_id, game_type)
 
     elif action == "vip_set_max_rounds":
         if not cfg.get("is_vip"):
-            try: bot.answer_callback_query(call.id, "⚠️ Key Thường không thể đổi số ván. Cần lên VIP!", show_alert=True)
-            except: pass
+            if bot:
+                try: bot.answer_callback_query(call.id, "⚠️ Key Thường không thể đổi số ván. Cần lên VIP!", show_alert=True)
+                except: pass
             return
         cfg["waiting_for_max_rounds_vip"] = game_type; cfg["prompt_msg_id"] = call.message.message_id
-        try: bot.edit_message_text(f"🔢 **Nhập số ván muốn cược (Nhập `0` để chạy vô hạn):**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
-        except: pass
+        if bot:
+            try: bot.edit_message_text(f"🔢 **Nhập số ván muốn cược (Nhập `0` để chạy vô hạn):**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
+            except: pass
 
     elif action == "vip_set_max_losses":
         cfg["waiting_for_max_losses"] = game_type; cfg["prompt_msg_id"] = call.message.message_id
-        try: bot.edit_message_text(f"🛑 **Nhập số ván THUA LIÊN TIẾP để dừng bot (Nhập `0` để tắt):**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
-        except: pass
+        if bot:
+            try: bot.edit_message_text(f"🛑 **Nhập số ván THUA LIÊN TIẾP để dừng bot (Nhập `0` để tắt):**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
+            except: pass
 
     elif action == "vip_set_stop_loss":
         cfg["waiting_for_stop_loss"] = game_type; cfg["prompt_msg_id"] = call.message.message_id
-        try: bot.edit_message_text(f"📉 **Nhập số tiền LỖ TỐI ĐA để ngắt bot (VD: `50` BUILD, Nhập `0` để tắt):**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
-        except: pass
+        if bot:
+            try: bot.edit_message_text(f"📉 **Nhập số tiền LỖ TỐI ĐA để ngắt bot (VD: `50` BUILD, Nhập `0` để tắt):**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
+            except: pass
 
     elif action == "vip_set_take_profit":
         cfg["waiting_for_take_profit"] = game_type; cfg["prompt_msg_id"] = call.message.message_id
-        try: bot.edit_message_text(f"🎯 **Nhập số tiền LÃI MỤC TIÊU để ngắt bot (VD: `100` BUILD, Nhập `0` để tắt):**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
-        except: pass
+        if bot:
+            try: bot.edit_message_text(f"🎯 **Nhập số tiền LÃI MỤC TIÊU để ngắt bot (VD: `100` BUILD, Nhập `0` để tắt):**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
+            except: pass
 
     elif action == "setup_link":
         if len(g_cfg["accounts"]) >= 1:
-            try: bot.answer_callback_query(call.id, "⚠️ Đã có nick! Hãy xóa nick cũ trước khi thêm nick mới.", show_alert=True)
-            except: pass
+            if bot:
+                try: bot.answer_callback_query(call.id, "⚠️ Đã có nick! Hãy xóa nick cũ trước khi thêm nick mới.", show_alert=True)
+                except: pass
             return
         reset_user_wait_flags(cfg)
         cfg["waiting_for_link"] = game_type; cfg["prompt_msg_id"] = call.message.message_id
-        try:
-            bot.answer_callback_query(call.id)
-            bot.edit_message_text(f"📥 **Dán link [ {game_name_vi} ] vào ô chat:**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
-        except: pass
+        if bot:
+            try:
+                bot.answer_callback_query(call.id)
+                bot.edit_message_text(f"📥 **Dán link [ {game_name_vi} ] vào ô chat:**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
+            except: pass
     elif action == "delete_acc":
         if not g_cfg["accounts"]:
-            try: bot.answer_callback_query(call.id, "⚠️ Không có nick nào để xóa!", show_alert=True)
-            except: pass
+            if bot:
+                try: bot.answer_callback_query(call.id, "⚠️ Không có nick nào để xóa!", show_alert=True)
+                except: pass
             return
         g_cfg["global_running"] = False
         for uid in list(g_cfg["accounts"].keys()): get_account_state(game_type, uid)["random_stop"].set()
         g_cfg["accounts"].clear(); g_cfg["selected_uids"].clear()
-        try: bot.answer_callback_query(call.id, "🗑️ Đã xóa nick thành công!")
-        except: pass
+        if bot:
+            try: bot.answer_callback_query(call.id, "🗑️ Đã xóa nick thành công!")
+            except: pass
         show_game_menu(chat_id, call.message.message_id, game_type)
     elif action == "input_bet":
         reset_user_wait_flags(cfg)
         cfg["waiting_for_bet"] = game_type; cfg["prompt_msg_id"] = call.message.message_id
-        try:
-            bot.answer_callback_query(call.id)
-            bot.edit_message_text(f"✏️ **Nhập số tiền cược cho [ {game_name_vi} ]:**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
-        except: pass
+        if bot:
+            try:
+                bot.answer_callback_query(call.id)
+                bot.edit_message_text(f"✏️ **Nhập số tiền cược cho [ {game_name_vi} ]:**", chat_id, call.message.message_id, reply_markup=markup_back, parse_mode="Markdown")
+            except: pass
     elif action == "toggle_bot":
         if not check_key_validity(chat_id):
             g_cfg["global_running"] = False
-            try: bot.answer_callback_query(call.id, "⚠️ Key hết hạn, không thể bật bot!", show_alert=True)
-            except: pass
+            if bot:
+                try: bot.answer_callback_query(call.id, "⚠️ Key hết hạn, không thể bật bot!", show_alert=True)
+                except: pass
             show_game_menu(chat_id, call.message.message_id, game_type)
             return
 
         if not g_cfg["accounts"]:
-            try: bot.answer_callback_query(call.id, "⚠️ Chưa có nick nào!", show_alert=True)
-            except: pass
+            if bot:
+                try: bot.answer_callback_query(call.id, "⚠️ Chưa có nick nào!", show_alert=True)
+                except: pass
             return
             
         if not g_cfg["global_running"]:
@@ -1197,13 +1363,15 @@ def callback_game_actions(call):
                 st["random_stop"].clear()
                 if game_type == "escape": Thread(target=run_escape_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
                 elif game_type == "sprint": Thread(target=run_sprint_bot_engine, args=(chat_id, uid, skey), daemon=True).start()
-            try: bot.answer_callback_query(call.id, "🚀 Đã bật auto thành công!")
-            except: pass
+            if bot:
+                try: bot.answer_callback_query(call.id, "🚀 Đã bật auto thành công!")
+                except: pass
         else:
             g_cfg["global_running"] = False
             for uid in g_cfg["accounts"]: get_account_state(game_type, uid)["random_stop"].set()
-            try: bot.answer_callback_query(call.id, "⏹️ Đã dừng bot!")
-            except: pass
+            if bot:
+                try: bot.answer_callback_query(call.id, "⏹️ Đã dừng bot!")
+                except: pass
         show_game_menu(chat_id, call.message.message_id, game_type)
     elif action == "toggle_asset":
         current_asset = g_cfg["asset_type"]
@@ -1216,12 +1384,14 @@ def callback_game_actions(call):
         else:
             if not g_cfg.get("base_bet"): g_cfg["base_bet"] = 1.0
 
-        try: bot.answer_callback_query(call.id, f"✅ Đã đổi sang {g_cfg['asset_type']}")
-        except: pass
+        if bot:
+            try: bot.answer_callback_query(call.id, f"✅ Đã đổi sang {g_cfg['asset_type']}")
+            except: pass
         show_game_menu(chat_id, call.message.message_id, game_type)
     elif action == "status":
-        try: bot.answer_callback_query(call.id, "🔄 Cập nhật!")
-        except: pass
+        if bot:
+            try: bot.answer_callback_query(call.id, "🔄 Cập nhật!")
+            except: pass
         tot_bets, tot_wins, tot_losses, tot_profit = 0, 0, 0, Decimal("0")
         for uid in g_cfg["accounts"]:
             st = get_account_state(game_type, uid)
@@ -1234,8 +1404,9 @@ def callback_game_actions(call):
             types.InlineKeyboardButton("🔄 Reset Thống Kê", callback_data=f"game_{game_type}_reset_stats"),
             types.InlineKeyboardButton("🔙 Trở lại", callback_data=f"back_to_game_{game_type}")
         )
-        try: bot.edit_message_text(msg, chat_id, call.message.message_id, reply_markup=markup_stat, parse_mode="Markdown")
-        except: pass
+        if bot:
+            try: bot.edit_message_text(msg, chat_id, call.message.message_id, reply_markup=markup_stat, parse_mode="Markdown")
+            except: pass
 
 def show_vip_settings_menu(chat_id, message_id, game_type):
     cfg = get_user_config(chat_id)
@@ -1260,163 +1431,12 @@ def show_vip_settings_menu(chat_id, message_id, game_type):
         types.InlineKeyboardButton("🎯 Cài Mục Tiêu Chốt Lời", callback_data=f"game_{game_type}_vip_set_take_profit"),
         types.InlineKeyboardButton("🔙 Trở lại Game", callback_data=f"back_to_game_{game_type}")
     )
-    try: bot.edit_message_text(msg_text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
-    except: pass
-
-@bot.message_handler(func=lambda message: True)
-def handle_text_messages(message):
-    chat_id = message.chat.id
-    text = message.text.strip()
-    
-    is_banned, ban_msg = check_user_ban_status(chat_id)
-    if is_banned:
-        bot.send_message(chat_id, ban_msg, parse_mode="Markdown")
-        return
-
-    db = load_system_db()
-    if db.get("maintenance", {}).get("active"):
-        notice = db.get("maintenance", {}).get("notice", "⚠️ Hệ thống đang bảo trì!")
-        bot.send_message(chat_id, f"🛠️ **THÔNG BÁO BẢO TRÌ** 🛠️\n━━━━━━━━━━━━━━━━━━━\n{notice}", parse_mode="Markdown")
-        return
-
-    cfg = get_user_config(chat_id)
-
-    game_target_bet = cfg.get("waiting_for_bet")
-    if game_target_bet:
-        try: bot.delete_message(chat_id, message.message_id)
-        except: pass
-        prompt_id = cfg.get("prompt_msg_id")
-        try:
-            val = float(text)
-            if val <= 0: raise ValueError()
-            g_cfg = cfg[game_target_bet]
-            if game_target_bet == "sprint": g_cfg["bet_amount_total"] = str(val)
-            else: g_cfg["base_bet"] = val
-            cfg["waiting_for_bet"] = None
-            show_game_menu(chat_id, prompt_id, game_target_bet)
-            return
-        except:
-            bot.send_message(chat_id, "⚠️ Vui lòng chỉ nhập số tiền cược hợp lệ!")
-            return
-
-    game_max_rounds_vip = cfg.get("waiting_for_max_rounds_vip")
-    if game_max_rounds_vip:
-        try: bot.delete_message(chat_id, message.message_id); val = int(text)
-        except: val = 100
-        cfg[game_max_rounds_vip]["max_rounds"] = val
-        cfg["waiting_for_max_rounds_vip"] = None
-        show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_max_rounds_vip)
-        return
-
-    if cfg.get("waiting_for_vip_code"):
-        try: bot.delete_message(chat_id, message.message_id)
-        except: pass
-        res = verify_key_with_server(text, str(chat_id))
-        if res.get("status") == "success":
-            if not res.get("is_vip", False): err_msg = "Mã này là Key Thường, không phải Code VIP!"
-            else:
-                expire_time = res.get("expire_at", time.time() + 86400)
-                cfg["is_vip"] = True; cfg["vip_expire_at"] = expire_time
-                cfg["has_valid_key"] = True; cfg["key_expire_at"] = expire_time
-                cfg["waiting_for_vip_code"] = False
-                try: session_manager.save_session_to_file(chat_id, expire_time)
-                except: pass
-                prompt_id = cfg.get("prompt_msg_id")
-                if prompt_id:
-                    try: bot.delete_message(chat_id, prompt_id)
-                    except: pass
-                active_g = cfg.get("active_game", "escape")
-                show_game_menu(chat_id, cfg.get("menu_msg_id"), active_g)
-                return
-        else: err_msg = res.get("msg", "Mã Code VIP không chính xác hoặc đã bị xóa!")
-
-        def send_and_auto_delete_err():
-            try:
-                msg = bot.send_message(chat_id, f"❌ **{err_msg}**", parse_mode="Markdown")
-                time.sleep(3)
-                bot.delete_message(chat_id, msg.message_id)
-            except: pass
-        Thread(target=send_and_auto_delete_err, daemon=True).start()
-        return
-
-    game_max_loss = cfg.get("waiting_for_max_losses")
-    if game_max_loss:
-        try: bot.delete_message(chat_id, message.message_id); val = int(text)
-        except: val = 0
-        cfg[game_max_loss]["max_continuous_losses"] = val
-        cfg["waiting_for_max_losses"] = None
-        show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_max_loss)
-        return
-
-    game_stop_loss = cfg.get("waiting_for_stop_loss")
-    if game_stop_loss:
-        try: bot.delete_message(chat_id, message.message_id); val = float(text)
-        except: val = 0.0
-        cfg[game_stop_loss]["stop_loss_amount"] = val
-        cfg["waiting_for_stop_loss"] = None
-        show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_stop_loss)
-        return
-
-    game_take_profit = cfg.get("waiting_for_take_profit")
-    if game_take_profit:
-        try: bot.delete_message(chat_id, message.message_id); val = float(text)
-        except: val = 0.0
-        cfg[game_take_profit]["take_profit_amount"] = val
-        cfg["waiting_for_take_profit"] = None
-        show_vip_settings_menu(chat_id, cfg.get("prompt_msg_id"), game_take_profit)
-        return
-
-    if cfg.get("waiting_for_key"):
-        try: bot.delete_message(chat_id, message.message_id)
-        except: pass
-        res = verify_key_with_server(text, str(chat_id))
-        if res.get("status") == "success":
-            cfg["has_valid_key"] = True; cfg["waiting_for_key"] = False
-            cfg["is_vip"] = res.get("is_vip", False)
-            cfg["key_expire_at"] = res.get("expire_at", time.time() + 86400)
-            session_manager.save_session_to_file(chat_id, cfg["key_expire_at"])
-            prompt_id = cfg.get("prompt_msg_id")
-            if prompt_id:
-                try: bot.delete_message(chat_id, prompt_id)
-                except: pass
-            show_main_menu(chat_id, message.message_id, is_new=True)
-        else:
-            err_msg = res.get("msg", "Key không hợp lệ hoặc đã được sử dụng!")
-            web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
-            markup = types.InlineKeyboardMarkup()
-            markup.add(
-                types.InlineKeyboardButton("🌐 Lấy Key Mới (24h)", url=web_url),
-                types.InlineKeyboardButton("🔑 Nhập Key Kích Hoạt", callback_data="btn_nhap_key")
-            )
-            bot.send_message(chat_id, f"❌ **{err_msg}**", reply_markup=markup, parse_mode="Markdown")
-        return
-
-    game_target_link = cfg.get("waiting_for_link")
-    if game_target_link:
-        try: bot.delete_message(chat_id, message.message_id)
-        except: pass
-        prompt_id = cfg.get("prompt_msg_id")
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("🔙 Trở lại", callback_data=f"back_to_game_{game_target_link}"))
-        g_cfg = cfg[game_target_link]
-        if "userId=" in text and "secretKey=" in text:
-            try:
-                parsed_url = urlparse(text); query_params = parse_qs(parsed_url.query)
-                uid_str = query_params.get("userId", [None])[0]; skey = query_params.get("secretKey", [None])[0]
-                if uid_str and skey:
-                    uid = int(uid_str); g_cfg["accounts"][uid] = skey; cfg["waiting_for_link"] = None
-                    if prompt_id:
-                        try: bot.edit_message_text(f"✅ **Thêm nick thành công!** (`{uid}`)", chat_id, prompt_id, reply_markup=markup, parse_mode="Markdown")
-                        except: pass
-                    return
-            except: pass
-        return
-
-    if not text.startswith("/"):
-        try: bot.delete_message(chat_id, message.message_id)
+    if bot:
+        try: bot.edit_message_text(msg_text, chat_id, message_id, reply_markup=markup, parse_mode="Markdown")
         except: pass
 
 def update_menu_live(chat_id, game_type):
+    if not bot: return
     cfg = get_user_config(chat_id)
     check_key_validity(chat_id)
     menu_msg_id = cfg.get("menu_msg_id")
@@ -1479,17 +1499,17 @@ def run_escape_bot_engine(chat_id, uid, skey):
     while escape_cfg["global_running"] and not acc_st["random_stop"].is_set():
         if escape_cfg.get("max_continuous_losses", 0) > 0 and acc_st["streak_loss"] >= escape_cfg["max_continuous_losses"]:
             escape_cfg["global_running"] = False
-            bot.send_message(chat_id, f"🛑 **VIP Auto Stop:** Đã thua {acc_st['streak_loss']} ván liên tiếp!", parse_mode="Markdown")
+            if bot: bot.send_message(chat_id, f"🛑 **VIP Auto Stop:** Đã thua {acc_st['streak_loss']} ván liên tiếp!", parse_mode="Markdown")
             update_menu_live(chat_id, "escape"); break
 
         if escape_cfg.get("stop_loss_amount", 0.0) > 0 and acc_st["total_profit"] <= -Decimal(str(escape_cfg["stop_loss_amount"])):
             escape_cfg["global_running"] = False
-            bot.send_message(chat_id, f"📉 **VIP Auto Stop:** Cắt Lỗ ({acc_st['total_profit']} {escape_cfg['asset_type']})!", parse_mode="Markdown")
+            if bot: bot.send_message(chat_id, f"📉 **VIP Auto Stop:** Cắt Lỗ ({acc_st['total_profit']} {escape_cfg['asset_type']})!", parse_mode="Markdown")
             update_menu_live(chat_id, "escape"); break
 
         if escape_cfg.get("take_profit_amount", 0.0) > 0 and acc_st["total_profit"] >= Decimal(str(escape_cfg["take_profit_amount"])):
             escape_cfg["global_running"] = False
-            bot.send_message(chat_id, f"🎯 **VIP Auto Stop:** Chốt Lời (+{acc_st['total_profit']} {escape_cfg['asset_type']})!", parse_mode="Markdown")
+            if bot: bot.send_message(chat_id, f"🎯 **VIP Auto Stop:** Chốt Lời (+{acc_st['total_profit']} {escape_cfg['asset_type']})!", parse_mode="Markdown")
             update_menu_live(chat_id, "escape"); break
 
         if not check_key_validity(chat_id): break
@@ -1497,7 +1517,7 @@ def run_escape_bot_engine(chat_id, uid, skey):
         max_r = escape_cfg.get("max_rounds", 100)
         if max_r > 0 and acc_st["total_bets"] >= max_r:
             escape_cfg["global_running"] = False
-            bot.send_message(chat_id, f"🏁 **Đã hoàn thành định mức {max_r} ván cược. Bot tự động dừng!**", parse_mode="Markdown")
+            if bot: bot.send_message(chat_id, f"🏁 **Đã hoàn thành định mức {max_r} ván cược. Bot tự động dừng!**", parse_mode="Markdown")
             update_menu_live(chat_id, "escape"); break
 
         try:
@@ -1540,17 +1560,17 @@ def run_sprint_bot_engine(chat_id, uid, skey):
     while sprint_cfg["global_running"] and not acc_st["random_stop"].is_set():
         if sprint_cfg.get("max_continuous_losses", 0) > 0 and acc_st["streak_loss"] >= sprint_cfg["max_continuous_losses"]:
             sprint_cfg["global_running"] = False
-            bot.send_message(chat_id, f"🛑 **VIP Auto Stop:** Đã thua {acc_st['streak_loss']} ván liên tiếp!", parse_mode="Markdown")
+            if bot: bot.send_message(chat_id, f"🛑 **VIP Auto Stop:** Đã thua {acc_st['streak_loss']} ván liên tiếp!", parse_mode="Markdown")
             update_menu_live(chat_id, "sprint"); break
 
         if sprint_cfg.get("stop_loss_amount", 0.0) > 0 and acc_st["total_profit"] <= -Decimal(str(sprint_cfg["stop_loss_amount"])):
             sprint_cfg["global_running"] = False
-            bot.send_message(chat_id, f"📉 **VIP Auto Stop:** Cắt Lỗ ({acc_st['total_profit']} {sprint_cfg['asset_type']})!", parse_mode="Markdown")
+            if bot: bot.send_message(chat_id, f"📉 **VIP Auto Stop:** Cắt Lỗ ({acc_st['total_profit']} {sprint_cfg['asset_type']})!", parse_mode="Markdown")
             update_menu_live(chat_id, "sprint"); break
 
         if sprint_cfg.get("take_profit_amount", 0.0) > 0 and acc_st["total_profit"] >= Decimal(str(sprint_cfg["take_profit_amount"])):
             sprint_cfg["global_running"] = False
-            bot.send_message(chat_id, f"🎯 **VIP Auto Stop:** Chốt Lời (+{acc_st['total_profit']} {sprint_cfg['asset_type']})!", parse_mode="Markdown")
+            if bot: bot.send_message(chat_id, f"🎯 **VIP Auto Stop:** Chốt Lời (+{acc_st['total_profit']} {sprint_cfg['asset_type']})!", parse_mode="Markdown")
             update_menu_live(chat_id, "sprint"); break
 
         if not check_key_validity(chat_id): sprint_cfg["global_running"] = False; break
@@ -1558,7 +1578,7 @@ def run_sprint_bot_engine(chat_id, uid, skey):
         max_r = sprint_cfg.get("max_rounds", 100)
         if max_r > 0 and acc_st["total_bets"] >= max_r:
             sprint_cfg["global_running"] = False
-            bot.send_message(chat_id, f"🏁 **Đã hoàn thành định mức {max_r} ván cược. Bot tự động dừng!**", parse_mode="Markdown")
+            if bot: bot.send_message(chat_id, f"🏁 **Đã hoàn thành định mức {max_r} ván cược. Bot tự động dừng!**", parse_mode="Markdown")
             update_menu_live(chat_id, "sprint"); break
 
         try:
@@ -1579,6 +1599,7 @@ def run_sprint_bot_engine(chat_id, uid, skey):
         time.sleep(3)
 
 def run_telebot_polling():
+    if not bot: return
     while True:
         try:
             bot.remove_webhook()
@@ -1586,7 +1607,54 @@ def run_telebot_polling():
             bot.infinity_polling(timeout=10, long_polling_timeout=5, skip_pending=True)
         except: time.sleep(5)
 
+# ---------------------------------------------------------
+# DISCORD BOT LOGIC (Chạy song song)
+# ---------------------------------------------------------
+if discord_bot:
+    @discord_bot.event
+    async def on_ready():
+        print(f"🤖 Discord Bot đã hoạt động: {discord_bot.user}", flush=True)
+
+    @discord_bot.command(name="start")
+    async def discord_start(ctx):
+        user_id = str(ctx.author.id)
+        is_banned, ban_msg = check_user_ban_status(user_id)
+        if is_banned:
+            await ctx.send(ban_msg)
+            return
+
+        db = load_system_db()
+        if db.get("maintenance", {}).get("active"):
+            await ctx.send(f"🛠️ **BẢO TRÌ:** {db['maintenance']['notice']}")
+            return
+
+        web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
+        await ctx.send(f"🎮 **XWORLD BOT (Discord)**\nLấy key tại web: {web_url}\nDùng lệnh `!nhapkey <mã>` để kích hoạt.")
+
+    @discord_bot.command(name="nhapkey")
+    async def discord_nhapkey(ctx, key_code: str):
+        user_id = str(ctx.author.id)
+        res = verify_key_with_server(key_code, user_id)
+        if res["status"] == "success":
+            await ctx.send(f"✅ {res['msg']}")
+        else:
+            await ctx.send(f"❌ {res['msg']}")
+
+def run_discord_bot():
+    if DISCORD_BOT_TOKEN and discord_bot:
+        try:
+            discord_bot.run(DISCORD_BOT_TOKEN)
+        except Exception as e:
+            print(f"❌ Lỗi chạy Discord Bot: {e}", flush=True)
+    else:
+        print("⚠️ Chưa cấu hình DISCORD_BOT_TOKEN!", flush=True)
+
+# ---------------------------------------------------------
+# KHỞI CHẠY ĐỒNG THỜI (THREADS)
+# ---------------------------------------------------------
 if __name__ == "__main__":
     Thread(target=run_telebot_polling, daemon=True).start()
+    Thread(target=run_discord_bot, daemon=True).start()
+    
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
