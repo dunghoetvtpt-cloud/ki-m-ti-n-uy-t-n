@@ -37,7 +37,7 @@ db_mongo = client["xworld_db"] if client else None
 collection = db_mongo["system_data"] if db_mongo else None
 
 def load_system_db():
-    if not collection:
+    if client is None or collection is None:
         return {"keys": {}, "banned_users": {}, "maintenance": {"active": False, "notice": ""}}
     try:
         doc = collection.find_one({"_id": "main_config"})
@@ -76,7 +76,7 @@ def load_system_db():
     return {"keys": {}, "banned_users": {}, "maintenance": {"active": False, "notice": ""}}
 
 def save_system_db(db):
-    if not collection:
+    if client is None or collection is None:
         return False
     try:
         db["_id"] = "main_config"
@@ -1656,7 +1656,8 @@ def run_telebot_polling():
 # KHỞI CHẠY HỆ THỐNG
 # ---------------------------------------------------------
 if __name__ == "__main__":
-    Thread(target=run_telebot_polling, daemon=True).start()
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or os.environ.get("RENDER"):
+        Thread(target=run_telebot_polling, daemon=True).start()
     
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
