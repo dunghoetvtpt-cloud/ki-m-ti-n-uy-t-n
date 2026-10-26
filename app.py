@@ -33,8 +33,8 @@ ip_request_history = {}
 # ---------------------------------------------------------
 MONGO_URI = os.environ.get("MONGO_URI", "")
 client = MongoClient(MONGO_URI) if MONGO_URI else None
-db_mongo = client["xworld_db"] if client else None
-collection = db_mongo["system_data"] if db_mongo else None
+db_mongo = client["xworld_db"] if client is not None else None
+collection = db_mongo["system_data"] if db_mongo is not None else None
 
 def load_system_db():
     if client is None or collection is None:
