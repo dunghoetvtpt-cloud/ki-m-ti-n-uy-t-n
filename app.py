@@ -10,23 +10,14 @@ from flask import Flask, render_template_string, request, redirect, url_for, ses
 import telebot
 from telebot import types
 
-import discord
-from discord.ext import commands
-
 import session_manager
 
 # ---------------------------------------------------------
-# CẤU HÌNH BOT TELEGRAM, DISCORD & FLASK WEB
+# CẤU HÌNH BOT TELEGRAM & FLASK WEB
 # ---------------------------------------------------------
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-DISCORD_BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN")
 
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, parse_mode="Markdown") if TELEGRAM_BOT_TOKEN else None
-
-# Khởi tạo Discord Bot
-intents = discord.Intents.default()
-intents.message_content = True
-discord_bot = commands.Bot(command_prefix="!", intents=intents) if DISCORD_BOT_TOKEN else None
 
 app = Flask(__name__)
 app.secret_key = "dung_license_secret_key_1612012"
@@ -75,12 +66,20 @@ def load_system_db():
     return {"keys": {}, "banned_users": {}, "maintenance": {"active": False, "notice": ""}}
 
 def save_system_db(db):
-    if not JSONBIN_BIN_ID or not JSONBIN_API_KEY: return
+    if not JSONBIN_BIN_ID or not JSONBIN_API_KEY: 
+        return False
     try:
         url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}"
         headers = {"Content-Type": "application/json", "X-Master-Key": JSONBIN_API_KEY}
-        requests.put(url, json=db, headers=headers, timeout=5)
-    except: pass
+        res = requests.put(url, json=db, headers=headers, timeout=5)
+        if res.status_code == 200:
+            return True
+        else:
+            print(f"❌ Lỗi lưu JSONBin: {res.status_code} - {res.text}", flush=True)
+            return False
+    except Exception as e:
+        print(f"❌ Lỗi kết nối JSONBin khi lưu: {e}", flush=True)
+        return False
 
 def load_keys():
     return load_system_db().get("keys", {})
@@ -102,7 +101,7 @@ def save_key_to_cloud(key_code, data):
         "max_uses": int(data.get("max_uses", 1)),
         "total_bets_count": int(data.get("total_bets_count", 0))
     }
-    save_system_db(db)
+    return save_system_db(db)
 
 def delete_key_from_cloud(key_code):
     db = load_system_db()
@@ -198,7 +197,21 @@ def get_link4m():
 def claim_key():
     new_key = "KEY-XW-" + ''.join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=8))
     key_data = {"status": "chua_dung", "used_by": [], "created_at": time.time(), "expire_at": None, "duration_hours": 24, "is_vip": False, "max_uses": 1, "total_bets_count": 0}
-    save_key_to_cloud(new_key, key_data)
+    
+    saved = False
+    for _ in range(3):
+        try:
+            if save_key_to_cloud(new_key, key_data):
+                db_check = load_system_db()
+                if new_key in db_check.get("keys", {}):
+                    saved = True
+                    break
+        except:
+            time.sleep(0.5)
+            
+    if not saved:
+        return redirect(url_for('home', error="⚠️ Lỗi kết nối cơ sở dữ liệu khi lưu key. Vui lòng thử lại!"))
+        
     return redirect(url_for('home', key=new_key))
 
 @app.route('/api/verify_key')
@@ -1608,53 +1621,10 @@ def run_telebot_polling():
         except: time.sleep(5)
 
 # ---------------------------------------------------------
-# DISCORD BOT LOGIC (Chạy song song)
-# ---------------------------------------------------------
-if discord_bot:
-    @discord_bot.event
-    async def on_ready():
-        print(f"🤖 Discord Bot đã hoạt động: {discord_bot.user}", flush=True)
-
-    @discord_bot.command(name="start")
-    async def discord_start(ctx):
-        user_id = str(ctx.author.id)
-        is_banned, ban_msg = check_user_ban_status(user_id)
-        if is_banned:
-            await ctx.send(ban_msg)
-            return
-
-        db = load_system_db()
-        if db.get("maintenance", {}).get("active"):
-            await ctx.send(f"🛠️ **BẢO TRÌ:** {db['maintenance']['notice']}")
-            return
-
-        web_url = os.environ.get("RENDER_EXTERNAL_URL", "https://ung-dung-cua-ong.onrender.com")
-        await ctx.send(f"🎮 **XWORLD BOT (Discord)**\nLấy key tại web: {web_url}\nDùng lệnh `!nhapkey <mã>` để kích hoạt.")
-
-    @discord_bot.command(name="nhapkey")
-    async def discord_nhapkey(ctx, key_code: str):
-        user_id = str(ctx.author.id)
-        res = verify_key_with_server(key_code, user_id)
-        if res["status"] == "success":
-            await ctx.send(f"✅ {res['msg']}")
-        else:
-            await ctx.send(f"❌ {res['msg']}")
-
-def run_discord_bot():
-    if DISCORD_BOT_TOKEN and discord_bot:
-        try:
-            discord_bot.run(DISCORD_BOT_TOKEN)
-        except Exception as e:
-            print(f"❌ Lỗi chạy Discord Bot: {e}", flush=True)
-    else:
-        print("⚠️ Chưa cấu hình DISCORD_BOT_TOKEN!", flush=True)
-
-# ---------------------------------------------------------
-# KHỞI CHẠY ĐỒNG THỜI (THREADS)
+# KHỞI CHẠY HỆ THỐNG
 # ---------------------------------------------------------
 if __name__ == "__main__":
     Thread(target=run_telebot_polling, daemon=True).start()
-    Thread(target=run_discord_bot, daemon=True).start()
     
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
