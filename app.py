@@ -9,6 +9,7 @@ from decimal import Decimal, ROUND_DOWN
 from flask import Flask, render_template_string, request, redirect, url_for, session, jsonify
 import telebot
 from telebot import types
+from pymongo import MongoClient
 
 import session_manager
 
@@ -28,57 +29,61 @@ LINK4M_API_TOKEN = "68a76c1354de3f0da567ca17"
 ip_request_history = {}
 
 # ---------------------------------------------------------
-# 🗄️ KẾT NỐI JSONBIN.IO (LƯU DỮ LIỆU CƠ SỞ BẢO MẬT)
+# 🗄️ KẾT NỐI MONGODB ATLAS (LƯU TRỮ ĐÁM MÂY VĨNH VIỄN)
 # ---------------------------------------------------------
-JSONBIN_BIN_ID = os.environ.get("JSONBIN_BIN_ID", "")
-JSONBIN_API_KEY = os.environ.get("JSONBIN_API_KEY", "")
+MONGO_URI = os.environ.get("MONGO_URI", "")
+client = MongoClient(MONGO_URI) if MONGO_URI else None
+db_mongo = client["xworld_db"] if client else None
+collection = db_mongo["system_data"] if db_mongo else None
 
 def load_system_db():
-    if not JSONBIN_BIN_ID or not JSONBIN_API_KEY: 
+    if not collection:
         return {"keys": {}, "banned_users": {}, "maintenance": {"active": False, "notice": ""}}
     try:
-        url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}/latest"
-        headers = {"X-Master-Key": JSONBIN_API_KEY}
-        res = requests.get(url, headers=headers, timeout=5)
-        if res.status_code == 200:
-            record = res.json().get("record", {})
-            if "keys" not in record: record["keys"] = {}
-            if "banned_users" not in record or isinstance(record["banned_users"], list): record["banned_users"] = {}
-            if "maintenance" not in record: record["maintenance"] = {"active": False, "notice": ""}
+        doc = collection.find_one({"_id": "main_config"})
+        if not doc:
+            default_data = {
+                "_id": "main_config", 
+                "keys": {}, 
+                "banned_users": {}, 
+                "maintenance": {"active": False, "notice": ""}
+            }
+            collection.insert_one(default_data)
+            return {"keys": {}, "banned_users": {}, "maintenance": {"active": False, "notice": ""}}
+        
+        record = doc
+        if "keys" not in record: record["keys"] = {}
+        if "banned_users" not in record or isinstance(record["banned_users"], list): record["banned_users"] = {}
+        if "maintenance" not in record: record["maintenance"] = {"active": False, "notice": ""}
+        
+        clean_keys = {}
+        for k, info in record["keys"].items():
+            if not isinstance(info, dict): continue
+            ub = info.get("used_by", [])
+            if isinstance(ub, (str, int)): info["used_by"] = [str(ub)] if ub else []
+            elif ub is None: info["used_by"] = []
+            elif not isinstance(ub, list): info["used_by"] = []
+            else: info["used_by"] = [str(x) for x in ub if x is not None]
             
-            clean_keys = {}
-            for k, info in record["keys"].items():
-                if not isinstance(info, dict): continue
-                ub = info.get("used_by", [])
-                if isinstance(ub, (str, int)): info["used_by"] = [str(ub)] if ub else []
-                elif ub is None: info["used_by"] = []
-                elif not isinstance(ub, list): info["used_by"] = []
-                else: info["used_by"] = [str(x) for x in ub if x is not None]
-                
-                info["max_uses"] = int(info.get("max_uses", 1))
-                info["is_vip"] = bool(info.get("is_vip", False))
-                info["total_bets_count"] = int(info.get("total_bets_count", 0))
-                clean_keys[k] = info
-            record["keys"] = clean_keys
-            return record
+            info["max_uses"] = int(info.get("max_uses", 1))
+            info["is_vip"] = bool(info.get("is_vip", False))
+            info["total_bets_count"] = int(info.get("total_bets_count", 0))
+            clean_keys[k] = info
+        record["keys"] = clean_keys
+        return record
     except Exception as e:
-        pass
+        print(f"❌ Lỗi load MongoDB: {e}", flush=True)
     return {"keys": {}, "banned_users": {}, "maintenance": {"active": False, "notice": ""}}
 
 def save_system_db(db):
-    if not JSONBIN_BIN_ID or not JSONBIN_API_KEY: 
+    if not collection:
         return False
     try:
-        url = f"https://api.jsonbin.io/v3/b/{JSONBIN_BIN_ID}"
-        headers = {"Content-Type": "application/json", "X-Master-Key": JSONBIN_API_KEY}
-        res = requests.put(url, json=db, headers=headers, timeout=5)
-        if res.status_code == 200:
-            return True
-        else:
-            print(f"❌ Lỗi lưu JSONBin: {res.status_code} - {res.text}", flush=True)
-            return False
+        db["_id"] = "main_config"
+        collection.replace_one({"_id": "main_config"}, db, upsert=True)
+        return True
     except Exception as e:
-        print(f"❌ Lỗi kết nối JSONBin khi lưu: {e}", flush=True)
+        print(f"❌ Lỗi ghi MongoDB: {e}", flush=True)
         return False
 
 def load_keys():
@@ -652,7 +657,7 @@ def admin_create_custom_key():
         if save_system_db(db):
             return jsonify({"success": True})
         else:
-            return jsonify({"success": False, "msg": "Không thể ghi dữ liệu lên JSONBin!"})
+            return jsonify({"success": False, "msg": "Không thể ghi dữ liệu lên MongoDB!"})
     except Exception as e: return jsonify({"success": False, "msg": str(e)})
 
 @app.route('/admin/modify_key_time', methods=['POST'])
