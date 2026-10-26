@@ -86,6 +86,7 @@ def load_keys():
 
 def save_key_to_cloud(key_code, data):
     db = load_system_db()
+    if "keys" not in db: db["keys"] = {}
     ub = data.get("used_by", [])
     if isinstance(ub, (str, int)): ub = [str(ub)] if ub else []
     elif ub is None: ub = []
@@ -105,7 +106,7 @@ def save_key_to_cloud(key_code, data):
 
 def delete_key_from_cloud(key_code):
     db = load_system_db()
-    if key_code in db["keys"]:
+    if "keys" in db and key_code in db["keys"]:
         del db["keys"][key_code]
         save_system_db(db)
 
@@ -126,18 +127,18 @@ def home():
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
-            body { background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0f172a 100%); color: #f8fafc; min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
-            .card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); border-radius: 30px; width: 100%; max-width: 440px; padding: 40px 25px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7); }
-            .icon-box { width: 70px; height: 70px; background: linear-gradient(135deg, #6366f1, #a855f7); border-radius: 20px; display: flex; align-items: center; justify-content: center; font-size: 32px; margin: 0 auto 20px; box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.5); color: #fff; }
-            .badge { display: inline-block; background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); padding: 6px 16px; border-radius: 30px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; }
-            h2 { font-size: 26px; font-weight: 800; color: #fff; margin-bottom: 10px; }
-            p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin-bottom: 30px; }
-            .btn { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: #fff; text-decoration: none; padding: 16px; border-radius: 16px; font-weight: 700; font-size: 15px; box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.5); transition: all 0.3s ease; border: none; cursor: pointer; }
-            .key-container { background: #0b0f19; border: 2px dashed #6366f1; padding: 18px; border-radius: 18px; margin-top: 15px; }
-            .key-text { font-family: monospace; font-size: 18px; color: #4ade80; font-weight: 700; word-break: break-all; margin-bottom: 12px; }
-            .btn-copy { background: #22c55e; color: #fff; border: none; padding: 10px 20px; border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
-            .btn-admin { display: inline-block; margin-top: 25px; color: #64748b; text-decoration: none; font-size: 13px; font-weight: 600; }
-            .error { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; padding: 12px; border-radius: 12px; font-size: 13px; margin-top: 15px; font-weight: 500; }
+            body { background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0f172a 100%); color: #f8fafc; min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 15px; overflow-x: hidden; }
+            .card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); border-radius: 24px; width: 100%; max-width: 440px; padding: 30px 20px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7); }
+            .icon-box { width: 60px; height: 60px; background: linear-gradient(135deg, #6366f1, #a855f7); border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 28px; margin: 0 auto 15px; box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.5); color: #fff; }
+            .badge { display: inline-block; background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); padding: 5px 14px; border-radius: 30px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+            h2 { font-size: 22px; font-weight: 800; color: #fff; margin-bottom: 10px; }
+            p { color: #94a3b8; font-size: 13px; line-height: 1.5; margin-bottom: 25px; }
+            .btn { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: #fff; text-decoration: none; padding: 14px; border-radius: 14px; font-weight: 700; font-size: 14px; box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.5); border: none; cursor: pointer; }
+            .key-container { background: #0b0f19; border: 2px dashed #6366f1; padding: 15px; border-radius: 16px; margin-top: 15px; }
+            .key-text { font-family: monospace; font-size: 16px; color: #4ade80; font-weight: 700; word-break: break-all; margin-bottom: 10px; }
+            .btn-copy { background: #22c55e; color: #fff; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+            .btn-admin { display: inline-block; margin-top: 20px; color: #64748b; text-decoration: none; font-size: 12px; font-weight: 600; }
+            .error { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; padding: 10px; border-radius: 10px; font-size: 12px; margin-top: 15px; font-weight: 500; }
         </style>
     </head>
     <body>
@@ -151,7 +152,7 @@ def home():
                     <div class="key-text" id="keyText">{{ new_key }}</div>
                     <button class="btn-copy" onclick="copyKey()"><i class="fa-regular fa-copy"></i> Sao Chép Key Ngay</button>
                 </div>
-                <p style="color: #4ade80; margin-top: 15px; font-weight: 600; font-size: 13px;">✨ Đã tạo key thành công! Dán vào Bot nhé.</p>
+                <p style="color: #4ade80; margin-top: 12px; font-weight: 600; font-size: 12px;">✨ Đã tạo key thành công! Dán vào Bot nhé.</p>
             {% else %}
                 <a href="/get_link4m" class="btn"><i class="fa-solid fa-rocket"></i> TIẾN HÀNH LẤY KEY (24H)</a>
             {% endif %}
@@ -236,13 +237,13 @@ def admin_login():
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
-        body { background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0f172a 100%); color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
-        .card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); padding: 40px 25px; border-radius: 30px; width: 100%; max-width: 400px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); }
-        h2 { color: #fff; margin-bottom: 25px; font-size: 22px; font-weight: 700; }
-        input { width: 100%; padding: 15px; border-radius: 14px; border: 1px solid #334155; background: #0b0f19; color: #fff; margin-bottom: 20px; font-size: 15px; text-align: center; }
-        .btn { width: 100%; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: #fff; border: none; padding: 15px; border-radius: 14px; font-weight: 700; cursor: pointer; font-size: 15px; }
-        .error { color: #f87171; font-size: 13px; margin-bottom: 15px; }
-        .back { display: inline-block; margin-top: 20px; color: #64748b; font-size: 13px; text-decoration: none; }
+        body { background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0f172a 100%); color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 15px; overflow-x: hidden; }
+        .card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); padding: 30px 20px; border-radius: 24px; width: 100%; max-width: 380px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); }
+        h2 { color: #fff; margin-bottom: 20px; font-size: 20px; font-weight: 700; }
+        input { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #334155; background: #0b0f19; color: #fff; margin-bottom: 15px; font-size: 14px; text-align: center; }
+        .btn { width: 100%; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: #fff; border: none; padding: 12px; border-radius: 12px; font-weight: 700; cursor: pointer; font-size: 14px; }
+        .error { color: #f87171; font-size: 12px; margin-bottom: 12px; }
+        .back { display: inline-block; margin-top: 15px; color: #64748b; font-size: 12px; text-decoration: none; }
     </style></head>
     <body><div class="card">
         <h2><i class="fa-solid fa-lock"></i> Quản Trị Hệ Thống</h2>
@@ -302,100 +303,116 @@ def admin_dashboard():
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
-        body { background: #0f172a; color: #f8fafc; padding: 20px 10px; }
-        .container { max-width: 1100px; margin: 0 auto; background: rgba(30, 41, 59, 0.85); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); padding: 20px; border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); }
-        .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #334155; padding-bottom: 12px; }
-        h2 { color: #38bdf8; font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
-        .logout { color: #f87171; text-decoration: none; font-size: 12px; font-weight: 600; background: rgba(239, 68, 68, 0.1); padding: 6px 12px; border-radius: 8px; }
+        body { background: #0f172a; color: #f8fafc; padding: 10px; overflow-x: hidden; }
+        .container { max-width: 1100px; margin: 0 auto; background: rgba(30, 41, 59, 0.85); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); padding: 15px; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); width: 100%; word-break: break-word; }
         
-        .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #334155; padding-bottom: 8px; }
-        .tab-btn { background: #1e293b; color: #94a3b8; border: none; padding: 10px 18px; border-radius: 12px; cursor: pointer; font-weight: 700; font-size: 13px; transition: 0.2s; display: flex; align-items: center; gap: 8px; }
-        .tab-btn.active { background: #6366f1; color: #fff; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4); }
-        .tab-content { display: none; }
+        /* HEADER & SIDEBAR MENU NAV */
+        .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #334155; padding-bottom: 10px; }
+        .menu-toggle { font-size: 20px; color: #38bdf8; cursor: pointer; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.2); padding: 6px 12px; border-radius: 8px; display: flex; align-items: center; gap: 6px; }
+        h2 { color: #38bdf8; font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+        .logout { color: #f87171; text-decoration: none; font-size: 11px; font-weight: 600; background: rgba(239, 68, 68, 0.1); padding: 6px 10px; border-radius: 8px; }
+
+        /* SIDEBAR DRAWER */
+        .sidebar-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 999; display: none; }
+        .sidebar { position: fixed; top: 0; left: -260px; width: 250px; height: 100%; background: #1e293b; z-index: 1000; padding: 20px 15px; transition: 0.3s ease; border-right: 1px solid #334155; }
+        .sidebar.active { left: 0; }
+        .sidebar h3 { color: #818cf8; font-size: 16px; margin-bottom: 20px; border-bottom: 1px solid #334155; padding-bottom: 10px; }
+        .sidebar-menu { display: flex; flex-direction: column; gap: 10px; }
+        .sidebar-btn { background: #0b0f19; color: #94a3b8; border: 1px solid #334155; padding: 12px; border-radius: 10px; text-align: left; cursor: pointer; font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 10px; width: 100%; }
+        .sidebar-btn.active { background: #6366f1; color: #fff; border-color: #6366f1; }
+
+        .tab-content { display: none; width: 100%; }
         .tab-content.active { display: block; }
 
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
-        .stat-card { background: #0b0f19; border: 1px solid #334155; padding: 15px; border-radius: 14px; text-align: center; }
-        .stat-card h4 { font-size: 12px; color: #94a3b8; margin-bottom: 8px; font-weight: 600; }
-        .stat-card span { font-size: 20px; font-weight: 800; color: #38bdf8; }
+        /* STATS GRID */
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 15px; width: 100%; }
+        .stat-card { background: #0b0f19; border: 1px solid #334155; padding: 12px; border-radius: 12px; text-align: center; }
+        .stat-card h4 { font-size: 11px; color: #94a3b8; margin-bottom: 6px; font-weight: 600; }
+        .stat-card span { font-size: 18px; font-weight: 800; color: #38bdf8; }
         
-        .table-responsive { width: 100%; overflow-x: auto; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; min-width: 850px; }
-        th, td { padding: 10px; border-bottom: 1px solid #334155; text-align: left; vertical-align: middle; }
-        th { color: #94a3b8; font-weight: 600; }
-        code { background: #0b0f19; padding: 4px 6px; border-radius: 6px; color: #4ade80; font-family: monospace; font-size: 11px; }
+        /* RESPONSIVE TABLE (CHỐNG TRÀN LỀ) */
+        .table-responsive { width: 100%; overflow-x: auto; max-width: 100%; border-radius: 10px; border: 1px solid #334155; }
+        table { width: 100%; border-collapse: collapse; font-size: 11px; min-width: 650px; }
+        th, td { padding: 8px 10px; border-bottom: 1px solid #334155; text-align: left; vertical-align: middle; white-space: nowrap; }
+        th { color: #94a3b8; font-weight: 600; background: #0b0f19; }
+        code { background: #0b0f19; padding: 3px 6px; border-radius: 6px; color: #4ade80; font-family: monospace; font-size: 11px; }
         
-        .btn-action { border: none; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; text-decoration: none; }
+        .btn-action { border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 10px; font-weight: 600; display: inline-flex; align-items: center; gap: 3px; text-decoration: none; }
         .btn-add-time { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
         .btn-sub-time { background: rgba(239, 68, 68, 0.2); color: #f87171; }
         .btn-del { background: rgba(239, 68, 68, 0.15); color: #f87171; }
-        .btn-del-all { background: rgba(239, 68, 68, 0.25); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); padding: 8px 14px; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 12px; text-decoration: none; }
+        .btn-del-all { background: rgba(239, 68, 68, 0.25); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); padding: 8px 12px; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 11px; text-decoration: none; display: inline-block; }
         .btn-copy-code { background: rgba(99, 102, 241, 0.15); color: #818cf8; }
-        .btn-add { background: #22c55e; color: #fff; border: none; padding: 10px 16px; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 12px; }
-        .btn-vip { background: #eab308; color: #000; border: none; padding: 10px 16px; border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 12px; }
-        .btn-ban-temp { background: #f97316; color: #fff; }
-        .btn-ban-perm { background: #ef4444; color: #fff; }
-        .btn-unban { background: #3b82f6; color: #fff; }
+        .btn-add { background: #22c55e; color: #fff; border: none; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 11px; }
+        .btn-vip { background: #eab308; color: #000; border: none; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 11px; }
 
-        .box-create { background: #0b0f19; padding: 15px; border-radius: 14px; margin-bottom: 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; border: 1px solid #334155; }
-        .box-create input, .box-create textarea { padding: 8px 12px; border-radius: 8px; border: 1px solid #475569; background: #1e293b; color: #fff; font-size: 13px; }
-        .input-time { padding: 6px; border-radius: 6px; border: 1px solid #475569; background: #1e293b; color: #fff; width: 70px; text-align: center; font-size: 12px; }
-        .toast { position: fixed; bottom: 20px; right: 20px; background: #22c55e; color: white; padding: 10px 16px; border-radius: 8px; font-weight: 600; display: none; box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 1000; font-size: 13px; }
+        .box-create { background: #0b0f19; padding: 12px; border-radius: 12px; margin-bottom: 15px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; border: 1px solid #334155; width: 100%; }
+        .box-create input { padding: 6px 10px; border-radius: 6px; border: 1px solid #475569; background: #1e293b; color: #fff; font-size: 12px; }
+        .input-time { padding: 4px; border-radius: 4px; border: 1px solid #475569; background: #1e293b; color: #fff; width: 50px; text-align: center; font-size: 11px; }
+        .toast { position: fixed; bottom: 20px; right: 20px; background: #22c55e; color: white; padding: 8px 14px; border-radius: 8px; font-weight: 600; display: none; box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 1000; font-size: 12px; }
         
-        .switch { position: relative; display: inline-block; width: 50px; height: 26px; }
+        .switch { position: relative; display: inline-block; width: 44px; height: 22px; }
         .switch input { opacity: 0; width: 0; height: 0; }
         .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #334155; transition: .3s; border-radius: 34px; }
-        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 4px; bottom: 4px; background-color: white; transition: .3s; border-radius: 50%; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
         input:checked + .slider { background-color: #ef4444; }
-        input:checked + .slider:before { transform: translateX(24px); }
+        input:checked + .slider:before { transform: translateX(22px); }
     </style></head>
     <body>
+    
+    <!-- SIDEBAR NAV OVERLAY -->
+    <div class="sidebar-overlay" id="overlay" onclick="toggleSidebar()"></div>
+    <div class="sidebar" id="sidebar">
+        <h3><i class="fa-solid fa-bars"></i> DANH MỤC TRANG</h3>
+        <div class="sidebar-menu">
+            <button class="sidebar-btn active" id="btn-tab-keys" onclick="switchTab('tab-keys')"><i class="fa-solid fa-key"></i> 1. Quản Lý Key & VIP</button>
+            <button class="sidebar-btn" id="btn-tab-users" onclick="switchTab('tab-users')"><i class="fa-solid fa-users-gear"></i> 2. Quản Lý Người Dùng</button>
+            <button class="sidebar-btn" id="btn-tab-system" onclick="switchTab('tab-system')"><i class="fa-solid fa-tower-broadcast"></i> 3. Hệ Thống & Bảo Trì</button>
+        </div>
+    </div>
+
     <div class="toast" id="toastMsg">✅ Thành công!</div>
     <div class="container">
         <div class="header-flex">
-            <h2><i class="fa-solid fa-sliders"></i> QUẢN TRỊ BẢO MẬT & HỆ THỐNG</h2>
-            <a href="/admin/logout" class="logout"><i class="fa-solid fa-right-from-bracket"></i> Đăng xuất</a>
-        </div>
-        
-        <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('tab-keys')"><i class="fa-solid fa-key"></i> 1. Quản Lý Key & VIP</button>
-            <button class="tab-btn" onclick="switchTab('tab-users')"><i class="fa-solid fa-users-gear"></i> 2. Quản Lý Người Dùng</button>
-            <button class="tab-btn" onclick="switchTab('tab-system')"><i class="fa-solid fa-tower-broadcast"></i> 3. Hệ Thống & Bảo Trì</button>
+            <div class="menu-toggle" onclick="toggleSidebar()"><i class="fa-solid fa-bars"></i> Menu</div>
+            <h2>QUẢN TRỊ SYSTEM</h2>
+            <a href="/admin/logout" class="logout"><i class="fa-solid fa-right-from-bracket"></i> Thoát</a>
         </div>
 
+        <!-- TAB 1: QUẢN LÝ KEY -->
         <div id="tab-keys" class="tab-content active">
             <div class="stats-grid">
                 <div class="stat-card">
-                    <h4><i class="fa-solid fa-chart-pie" style="color: #818cf8;"></i> Tổng số Key</h4>
+                    <h4>Tổng số Key</h4>
                     <span>{{ total_keys_count }}</span>
                 </div>
                 <div class="stat-card">
-                    <h4><i class="fa-solid fa-user-check" style="color: #f87171;"></i> Đã kích hoạt</h4>
+                    <h4>Đã kích hoạt</h4>
                     <span style="color: #f87171;">{{ used_keys_count }}</span>
                 </div>
                 <div class="stat-card">
-                    <h4><i class="fa-solid fa-circle-check" style="color: #4ade80;"></i> Chưa kích hoạt</h4>
+                    <h4>Chưa kích hoạt</h4>
                     <span style="color: #4ade80;">{{ unused_keys_count }}</span>
                 </div>
             </div>
 
             <div class="box-create">
-                <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <label style="font-size: 11px; font-weight: 600; color: #94a3b8;">Thời hạn (Giờ):</label>
-                    <input type="number" id="customHours" value="24" min="1" style="width: 85px; text-align: center;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                    <label style="font-size: 10px; font-weight: 600; color: #94a3b8;">Thời hạn (H):</label>
+                    <input type="number" id="customHours" value="24" min="1" style="width: 70px; text-align: center;">
                 </div>
-                <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <label style="font-size: 11px; font-weight: 600; color: #94a3b8;">Số lượng:</label>
-                    <input type="number" id="customQty" value="1" min="1" max="100" style="width: 85px; text-align: center;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                    <label style="font-size: 10px; font-weight: 600; color: #94a3b8;">Số lượng:</label>
+                    <input type="number" id="customQty" value="1" min="1" max="100" style="width: 70px; text-align: center;">
                 </div>
-                <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <label style="font-size: 11px; font-weight: 600; color: #94a3b8;">Số người nhập:</label>
-                    <input type="number" id="maxUses" value="1" min="1" max="1000" style="width: 85px; text-align: center;">
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                    <label style="font-size: 10px; font-weight: 600; color: #94a3b8;">Lượt dùng:</label>
+                    <input type="number" id="maxUses" value="1" min="1" max="1000" style="width: 70px; text-align: center;">
                 </div>
-                <div style="display: flex; gap: 8px; margin-top: 16px;">
-                    <button class="btn-add" onclick="createCustomKey(false)"><i class="fa-solid fa-plus"></i> Tạo Key Thường</button>
-                    <button class="btn-vip" onclick="createCustomKey(true)"><i class="fa-solid fa-crown"></i> Tạo Code VIP</button>
-                    <a href="/admin/delete_all" class="btn-del-all" onclick="return confirm('Cảnh báo: Xóa sạch toàn bộ kho key?')" style="margin-left: 10px;"><i class="fa-solid fa-trash-can"></i> Xóa Sạch Kho Key</a>
+                <div style="display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap;">
+                    <button class="btn-add" onclick="createCustomKey(false)"><i class="fa-solid fa-plus"></i> Key Thường</button>
+                    <button class="btn-vip" onclick="createCustomKey(true)"><i class="fa-solid fa-crown"></i> Code VIP</button>
+                    <a href="/admin/delete_all" class="btn-del-all" onclick="return confirm('Cảnh báo: Xóa sạch toàn bộ kho key?')"><i class="fa-solid fa-trash-can"></i> Xóa Sạch</a>
                 </div>
             </div>
 
@@ -404,9 +421,9 @@ def admin_dashboard():
                     <tr>
                         <th>Mã Key / VIP</th>
                         <th>Loại</th>
-                        <th>Cộng / Trừ Giờ</th>
-                        <th>Thời Gian Còn Lại</th>
-                        <th>Số Người / Lượt Cược</th>
+                        <th>Cộng/Trừ H</th>
+                        <th>Thời Gian Còn</th>
+                        <th>Số Người/Ván</th>
                         <th>Thao Tác</th>
                     </tr>
                     {% for k, info in keys.items() %}
@@ -419,29 +436,28 @@ def admin_dashboard():
                     {% set tot_bets = info.get('total_bets_count', 0) %}
                     <tr>
                         <td><code>{{ k }}</code></td>
-                        <td>{% if info.get('is_vip') %}<b style="color:#eab308"><i class="fa-solid fa-crown"></i> VIP</b>{% else %}<span style="color:#94a3b8">Thường</span>{% endif %}</td>
+                        <td>{% if info.get('is_vip') %}<b style="color:#eab308">VIP</b>{% else %}<span style="color:#94a3b8">Thường</span>{% endif %}</td>
                         <td>
-                            <div style="display: flex; gap: 4px; align-items: center;">
+                            <div style="display: flex; gap: 2px; align-items: center;">
                                 <input type="number" id="time_{{ k }}" value="24" class="input-time">
-                                <button class="btn-action btn-add-time" onclick="modifyKeyTime('{{ k }}', 'add')"><i class="fa-solid fa-plus"></i> Cộng</button>
-                                <button class="btn-action btn-sub-time" onclick="modifyKeyTime('{{ k }}', 'sub')"><i class="fa-solid fa-minus"></i> Trừ</button>
+                                <button class="btn-action btn-add-time" onclick="modifyKeyTime('{{ k }}', 'add')">+</button>
+                                <button class="btn-action btn-sub-time" onclick="modifyKeyTime('{{ k }}', 'sub')">-</button>
                             </div>
                         </td>
                         <td>
                             {% if expire_at and expire_at > now %}
-                                <b style="color: #38bdf8;"><i class="fa-regular fa-clock"></i> {{ rem_h }}h {{ rem_m }}p còn lại</b>
+                                <b style="color: #38bdf8;">{{ rem_h }}h {{ rem_m }}p</b>
                             {% else %}
-                                <small style="color: #f87171;"><i class="fa-solid fa-triangle-exclamation"></i> Chưa dùng / Hết hạn</small>
+                                <small style="color: #f87171;">Chưa dùng/Hết hạn</small>
                             {% endif %}
                         </td>
                         <td>
-                            <span style="color: #94a3b8;"><i class="fa-solid fa-users"></i> {{ used_list|length }}/{{ max_u }} người</span> | 
-                            <b style="color: #38bdf8;"><i class="fa-solid fa-gamepad"></i> {{ tot_bets }} ván</b>
+                            <span>{{ used_list|length }}/{{ max_u }} người</span> | <b>{{ tot_bets }} ván</b>
                         </td>
                         <td>
-                            <div style="display: flex; gap: 4px;">
-                                <button class="btn-action btn-copy-code" onclick="copyThisKey('{{ k }}')"><i class="fa-regular fa-copy"></i> Coppy</button>
-                                <a href="/admin/delete?key={{ k }}" class="btn-action btn-del" onclick="return confirm('Xóa key này?')"><i class="fa-solid fa-trash"></i> Xóa</a>
+                            <div style="display: flex; gap: 3px;">
+                                <button class="btn-action btn-copy-code" onclick="copyThisKey('{{ k }}')">Copy</button>
+                                <a href="/admin/delete?key={{ k }}" class="btn-action btn-del" onclick="return confirm('Xóa key này?')">Xóa</a>
                             </div>
                         </td>
                     </tr>
@@ -450,50 +466,48 @@ def admin_dashboard():
             </div>
         </div>
 
+        <!-- TAB 2: QUẢN LÝ NGƯỜI DÙNG -->
         <div id="tab-users" class="tab-content">
-            <h3 style="font-size: 15px; color: #38bdf8; margin-bottom: 12px;"><i class="fa-solid fa-users"></i> Quản Lý & Khóa Người Dùng</h3>
             <div class="table-responsive">
                 <table>
                     <tr>
                         <th>Chat ID</th>
                         <th>Cấp Độ</th>
-                        <th>Tổng Ván Cược</th>
-                        <th>Trạng Thái Khóa (Ban)</th>
-                        <th>Cài Đặt Khóa Tạm Thời (Phút)</th>
-                        <th>Thao Tác Khóa / Mở Khóa</th>
+                        <th>Tổng Ván</th>
+                        <th>Trạng Thái</th>
+                        <th>Khóa Tạm (Phút)</th>
+                        <th>Thao Tác</th>
                     </tr>
                     {% for uid, uinfo in users.items() %}
                     {% set rem_ban = (uinfo.ban_until - now) if uinfo.ban_until > now else 0 %}
                     {% set rem_ban_m = (rem_ban // 60)|int %}
                     <tr>
                         <td><code>{{ uid }}</code></td>
-                        <td>{% if uinfo.is_vip %}<b style="color:#eab308"><i class="fa-solid fa-crown"></i> VIP</b>{% else %}<span style="color:#94a3b8">Thường</span>{% endif %}</td>
-                        <td><b style="color: #38bdf8;"><i class="fa-solid fa-gamepad"></i> {{ uinfo.total_bets }} ván</b></td>
+                        <td>{% if uinfo.is_vip %}<b style="color:#eab308">VIP</b>{% else %}<span style="color:#94a3b8">Thường</span>{% endif %}</td>
+                        <td><b>{{ uinfo.total_bets }} ván</b></td>
                         <td>
                             {% if uinfo.is_banned %}
                                 {% if uinfo.ban_type == 'perm' %}
-                                    <b style="color: #ef4444;"><i class="fa-solid fa-user-slash"></i> Bị Khóa Vĩnh Viễn</b>
+                                    <b style="color: #ef4444;">Khóa Vĩnh Viễn</b>
                                 {% else %}
-                                    <b style="color: #f97316;"><i class="fa-solid fa-clock-rotate-left"></i> Khóa tạm thời (Còn {{ rem_ban_m }} phút)</b>
+                                    <b style="color: #f97316;">Khóa ({rem_ban_m}p)</b>
                                 {% endif %}
                             {% else %}
-                                <b style="color: #22c55e;"><i class="fa-solid fa-user-check"></i> Hoạt động bình thường</b>
+                                <b style="color: #22c55e;">Bình thường</b>
                             {% endif %}
                         </td>
                         <td>
-                            <div style="display: flex; gap: 4px; align-items: center;">
-                                <input type="number" id="ban_time_{{ uid }}" value="24" class="input-time" style="width: 60px;">
-                                <button class="btn-action btn-ban-temp" onclick="banUserAction('{{ uid }}', 'temp')">Khóa Phút</button>
+                            <div style="display: flex; gap: 3px; align-items: center;">
+                                <input type="number" id="ban_time_{{ uid }}" value="24" class="input-time" style="width: 45px;">
+                                <button class="btn-action btn-vip" onclick="banUserAction('{{ uid }}', 'temp')">Khóa</button>
                             </div>
                         </td>
                         <td>
-                            <div style="display: flex; gap: 4px;">
-                                {% if uinfo.is_banned %}
-                                    <button class="btn-action btn-unban" onclick="banUserAction('{{ uid }}', 'unban')"><i class="fa-solid fa-unlock"></i> Hủy Banned</button>
-                                {% else %}
-                                    <button class="btn-action btn-ban-perm" onclick="banUserAction('{{ uid }}', 'perm')"><i class="fa-solid fa-ban"></i> Khóa Vĩnh Viễn</button>
-                                {% endif %}
-                            </div>
+                            {% if uinfo.is_banned %}
+                                <button class="btn-action btn-add-time" onclick="banUserAction('{{ uid }}', 'unban')">Mở Khóa</button>
+                            {% else %}
+                                <button class="btn-action btn-del" onclick="banUserAction('{{ uid }}', 'perm')">Khóa VV</button>
+                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -501,50 +515,57 @@ def admin_dashboard():
             </div>
         </div>
 
+        <!-- TAB 3: HỆ THỐNG & BẢO TRÌ -->
         <div id="tab-system" class="tab-content">
-            <div style="background: #0b0f19; padding: 20px; border-radius: 16px; border: 1px solid #334155; margin-bottom: 20px;">
-                <h3 style="font-size: 15px; color: #f87171; margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
-                    <i class="fa-solid fa-triangle-exclamation"></i> Chế Độ Bảo Trì Bot Toàn Hệ Thống
-                </h3>
-                <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 15px;">
+            <div style="background: #0b0f19; padding: 15px; border-radius: 12px; border: 1px solid #334155; margin-bottom: 15px;">
+                <h3 style="font-size: 13px; color: #f87171; margin-bottom: 10px;"><i class="fa-solid fa-triangle-exclamation"></i> Chế Độ Bảo Trì</h3>
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
                     <label class="switch">
                         <input type="checkbox" id="maintSwitch" {% if maint.active %}checked{% endif %} onchange="updateMaintenance()">
                         <span class="slider"></span>
                     </label>
-                    <span id="maintText" style="font-weight: 700; font-size: 14px;">
-                        {% if maint.active %}<span style="color: #ef4444;">🔴 ĐANG BẬT BẢO TRÌ</span>{% else %}<span style="color: #22c55e;">🟢 ĐANG HOẠT ĐỘNG BÌNH THƯỜNG</span>{% endif %}
+                    <span id="maintText" style="font-weight: 700; font-size: 12px;">
+                        {% if maint.active %}<span style="color: #ef4444;">🔴 ĐANG BẬT BẢO TRÌ</span>{% else %}<span style="color: #22c55e;">🟢 ĐANG HOẠT ĐỘNG</span>{% endif %}
                     </span>
                 </div>
-                <div style="display: flex; flex-direction: column; gap: 8px;">
-                    <label style="font-size: 12px; font-weight: 600; color: #94a3b8;">Nội dung thông báo bảo trì:</label>
-                    <textarea id="maintNotice" rows="3" style="width: 100%; background: #1e293b; color: #fff; border: 1px solid #475569; border-radius: 8px; padding: 10px; font-size: 13px;">{{ maint.notice or "⚠️ Hệ thống đang tiến hành nâng cấp & bảo trì định kỳ. Vui lòng quay lại sau ít phút!" }}</textarea>
-                    <button class="btn-add" style="width: 180px; margin-top: 5px;" onclick="updateMaintenance()"><i class="fa-solid fa-floppy-disk"></i> Lưu Thông Báo</button>
-                </div>
+                <textarea id="maintNotice" rows="3" style="width: 100%; background: #1e293b; color: #fff; border: 1px solid #475569; border-radius: 6px; padding: 8px; font-size: 12px; margin-bottom: 8px;">{{ maint.notice or "⚠️ Hệ thống đang bảo trì định kỳ!" }}</textarea>
+                <button class="btn-add" onclick="updateMaintenance()"><i class="fa-solid fa-floppy-disk"></i> Lưu Thông Báo</button>
             </div>
 
-            <div style="background: #0b0f19; padding: 20px; border-radius: 16px; border: 1px solid #334155;">
-                <h3 style="font-size: 15px; color: #38bdf8; margin-bottom: 15px;"><i class="fa-solid fa-bullhorn"></i> Gửi Thông Báo Tức Thời Đến Người Dùng</h3>
-                <p style="font-size: 12px; color: #94a3b8; margin-bottom: 10px;">💬 Thông báo sẽ tự động xóa sau 15 giây!</p>
-                <textarea id="broadcastMsg" rows="3" placeholder="Nhập nội dung thông báo..." style="width: 100%; background: #1e293b; color: #fff; border: 1px solid #475569; border-radius: 8px; padding: 10px; font-size: 13px; margin-bottom: 10px;"></textarea>
-                <button class="btn-vip" style="width: 200px;" onclick="sendBroadcast()"><i class="fa-solid fa-paper-plane"></i> Gửi Thông Báo Tức Thời</button>
+            <div style="background: #0b0f19; padding: 15px; border-radius: 12px; border: 1px solid #334155;">
+                <h3 style="font-size: 13px; color: #38bdf8; margin-bottom: 10px;"><i class="fa-solid fa-bullhorn"></i> Gửi Thông Báo Tức Thời</h3>
+                <textarea id="broadcastMsg" rows="3" placeholder="Nhập nội dung..." style="width: 100%; background: #1e293b; color: #fff; border: 1px solid #475569; border-radius: 6px; padding: 8px; font-size: 12px; margin-bottom: 8px;"></textarea>
+                <button class="btn-vip" onclick="sendBroadcast()"><i class="fa-solid fa-paper-plane"></i> Gửi Broadcast</button>
             </div>
         </div>
     </div>
 
     <script>
+    function toggleSidebar() {
+        const s = document.getElementById("sidebar");
+        const o = document.getElementById("overlay");
+        if (s.classList.contains("active")) {
+            s.classList.remove("active");
+            o.style.display = "none";
+        } else {
+            s.classList.add("active");
+            o.style.display = "block";
+        }
+    }
     function showToast(msg) {
         const t = document.getElementById("toastMsg");
         t.innerText = msg; t.style.display = "block";
         setTimeout(() => { t.style.display = "none"; }, 2500);
     }
     function switchTab(tabId) {
-        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-        event.currentTarget.classList.add('active');
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelectorAll('.sidebar-btn').forEach(b => b.classList.remove('active'));
         document.getElementById(tabId).classList.add('active');
+        document.getElementById("btn-" + tabId).classList.add('active');
+        toggleSidebar();
     }
     function copyThisKey(code) {
-        navigator.clipboard.writeText(code).then(() => { showToast("✅ Đã sao chép mã!"); });
+        navigator.clipboard.writeText(code).then(() => { showToast("✅ Đã sao chép!"); });
     }
     function createCustomKey(isVip) {
         let hours = document.getElementById("customHours").value;
@@ -568,7 +589,7 @@ def admin_dashboard():
         .then(res => res.json())
         .then(data => {
             if(data.success) {
-                showToast("✅ Đã " + (mode === 'add' ? 'cộng' : 'trừ') + " " + hours + " giờ!");
+                showToast("✅ Đã cập nhật giờ!");
                 setTimeout(() => { location.reload(); }, 800);
             } else { alert("Lỗi: " + data.msg); }
         });
@@ -581,7 +602,7 @@ def admin_dashboard():
             body: JSON.stringify({ user_id: uid, ban_type: banType, minutes: minutes })
         })
         .then(res => res.json())
-        .then(data => { if(data.success) { showToast("✅ Đã cập nhật trạng thái Banned!"); setTimeout(() => { location.reload(); }, 800); } });
+        .then(data => { if(data.success) { showToast("✅ Đã cập nhật!"); setTimeout(() => { location.reload(); }, 800); } });
     }
     function updateMaintenance() {
         let active = document.getElementById("maintSwitch").checked;
@@ -592,7 +613,7 @@ def admin_dashboard():
             body: JSON.stringify({ active: active, notice: notice })
         })
         .then(res => res.json())
-        .then(data => { if(data.success) { showToast("✅ Cập nhật bảo trì thành công!"); setTimeout(() => { location.reload(); }, 1000); } });
+        .then(data => { if(data.success) { showToast("✅ Cập nhật bảo trì!"); setTimeout(() => { location.reload(); }, 1000); } });
     }
     function sendBroadcast() {
         let msg = document.getElementById("broadcastMsg").value;
@@ -620,12 +641,18 @@ def admin_create_custom_key():
         max_uses = int(req_data.get("max_uses", 1))
         is_vip = bool(req_data.get("is_vip", False))
         prefix = "VIP-" if is_vip else "ADMIN-"
+        
         db = load_system_db()
+        if "keys" not in db: db["keys"] = {}
+        
         for _ in range(quantity):
             new_key = prefix + ''.join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=8))
             db["keys"][new_key] = {"status": "chua_dung", "used_by": [], "created_at": time.time(), "expire_at": None, "duration_hours": hours, "is_vip": is_vip, "max_uses": max_uses, "total_bets_count": 0}
-        save_system_db(db)
-        return jsonify({"success": True})
+            
+        if save_system_db(db):
+            return jsonify({"success": True})
+        else:
+            return jsonify({"success": False, "msg": "Không thể ghi dữ liệu lên JSONBin!"})
     except Exception as e: return jsonify({"success": False, "msg": str(e)})
 
 @app.route('/admin/modify_key_time', methods=['POST'])
