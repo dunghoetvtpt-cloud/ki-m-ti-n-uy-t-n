@@ -1,7 +1,5 @@
-Flask
+flask
+telebot
 requests
-websocket-client
-pyTelegramBotAPI
 pymongo
 dnspython
-discord.py
