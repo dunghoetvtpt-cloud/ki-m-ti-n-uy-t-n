@@ -84,7 +84,6 @@ def sync_push_to_github():
     except Exception as e:
         print(f"❌ Lỗi push lên GitHub: {e}", flush=True)
 
-# Kéo dữ liệu ngầm khi khởi động để tránh treo web
 Thread(target=sync_pull_from_github, daemon=True).start()
 
 # ---------------------------------------------------------
@@ -171,7 +170,7 @@ def delete_key_from_cloud(key_code):
         save_system_db(db)
 
 # ---------------------------------------------------------
-# FLASK WEB ROUTES (TRANG CHỦ & QUẢN TRỊ BÍ MẬT)
+# FLASK WEB ROUTES (TRANG CHỦ TÍCH HỢP BẤM 10 LẦN TIA SÉT)
 # ---------------------------------------------------------
 @app.route('/')
 def home():
@@ -189,7 +188,8 @@ def home():
             * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
             body { background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0f172a 100%); color: #f8fafc; min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 15px; overflow-x: hidden; }
             .card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); border-radius: 24px; width: 100%; max-width: 440px; padding: 30px 20px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7); }
-            .icon-box { width: 60px; height: 60px; background: linear-gradient(135deg, #6366f1, #a855f7); border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 28px; margin: 0 auto 15px; box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.5); color: #fff; }
+            .icon-box { width: 60px; height: 60px; background: linear-gradient(135deg, #6366f1, #a855f7); border-radius: 18px; display: flex; align-items: center; justify-content: center; font-size: 28px; margin: 0 auto 15px; box-shadow: 0 10px 25px -5px rgba(99, 102, 241, 0.5); color: #fff; cursor: pointer; user-select: none; transition: transform 0.1s; }
+            .icon-box:active { transform: scale(0.9); }
             .badge { display: inline-block; background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); padding: 5px 14px; border-radius: 30px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
             h2 { font-size: 22px; font-weight: 800; color: #fff; margin-bottom: 10px; }
             p { color: #94a3b8; font-size: 13px; line-height: 1.5; margin-bottom: 25px; }
@@ -202,7 +202,8 @@ def home():
     </head>
     <body>
         <div class="card">
-            <div class="icon-box"><i class="fa-solid fa-bolt"></i></div>
+            <!-- Ô icon tia sét bấm 10 lần để mở admin -->
+            <div class="icon-box" id="secretLightning" onclick="handleSecretClick()"><i class="fa-solid fa-bolt"></i></div>
             <span class="badge">Hệ Thống Tự Động 24/7</span>
             <h2>XWORLD GATEWAY</h2>
             <p>Vượt link an toàn và nhanh chóng để nhận mã bản quyền chính thức sử dụng trong 24 giờ.</p>
@@ -218,6 +219,16 @@ def home():
             {% if error %} <div class="error">{{ error }}</div> {% endif %}
         </div>
         <script>
+            let clickCount = 0;
+            function handleSecretClick() {
+                clickCount++;
+                if (clickCount >= 10) {
+                    window.location.href = "/quan-ly-bi-mat-dunghoet";
+                }
+                // Tự động reset sau 3 giây nếu không bấm đủ liên tục
+                setTimeout(() => { clickCount = 0; }, 3000);
+            }
+
             function copyKey() {
                 const keyText = document.getElementById("keyText").innerText;
                 navigator.clipboard.writeText(keyText).then(() => {
