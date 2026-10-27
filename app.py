@@ -2,6 +2,7 @@ import os
 import json
 import time
 import random
+import base64
 import requests
 from urllib.parse import urlparse, parse_qs
 from threading import Thread, Lock, Event
@@ -30,8 +31,68 @@ DB_FILE = "system_db.json"
 db_lock = Lock()
 
 # ---------------------------------------------------------
-# 🗄️ HỆ THỐNG LƯU TRỮ DỮ LIỆU CỤC BỘ (AN TOÀN, KHÔNG LỖI KẾT NỐI)
+# 🐙 CẤU HÌNH ĐỒNG BỘ GITHUB API
 # ---------------------------------------------------------
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+GITHUB_REPO = os.environ.get("GITHUB_REPO", "") # Ví dụ: dunghoetvtpt-cloud/ten-repo-cua-ong
+GITHUB_FILE_PATH = "system_db.json"
+
+def sync_pull_from_github():
+    if not GITHUB_TOKEN or not GITHUB_REPO:
+        return
+    try:
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}"
+        headers = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}
+        res = requests.get(url, headers=headers, timeout=5)
+        if res.status_code == 200:
+            content_b64 = res.json().get("content", "")
+            content_bytes = base64.b64decode(content_b64)
+            with open(DB_FILE, "wb") as f:
+                f.write(content_bytes)
+            print("📥 Đã đồng bộ dữ liệu từ GitHub thành công!", flush=True)
+    except Exception as e:
+        print(f"⚠️ Lỗi pull từ GitHub: {e}", flush=True)
+
+def sync_push_to_github():
+    if not GITHUB_TOKEN or not GITHUB_REPO:
+        return False
+    with db_lock:
+        if not os.path.exists(DB_FILE):
+            return False
+        try:
+            url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}"
+            headers = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}
+            
+            get_res = requests.get(url, headers=headers, timeout=5)
+            sha = None
+            if get_res.status_code == 200:
+                sha = get_res.json().get("sha")
+            
+            with open(DB_FILE, "rb") as f:
+                file_bytes = f.read()
+            content_b64 = base64.b64encode(file_bytes).decode("utf-8")
+            
+            payload = {
+                "message": "Auto-sync system_db.json from Render bot",
+                "content": content_b64,
+            }
+            if sha:
+                payload["sha"] = sha
+                
+            put_res = requests.put(url, json=payload, headers=headers, timeout=5)
+            if put_res.status_code in [200, 201]:
+                print("📤 Đã đẩy dữ liệu lên GitHub thành công!", flush=True)
+                return True
+        except Exception as e:
+            print(f"❌ Lỗi push lên GitHub: {e}", flush=True)
+    return False
+
+# ---------------------------------------------------------
+# 🗄️ HỆ THỐNG LƯU TRỮ DỮ LIỆU KẾT HỢP GITHUB SYNC
+# ---------------------------------------------------------
+# Kéo dữ liệu từ GitHub về ngay khi khởi động app
+sync_pull_from_github()
+
 def load_system_db():
     with db_lock:
         if not os.path.exists(DB_FILE):
@@ -43,6 +104,7 @@ def load_system_db():
             try:
                 with open(DB_FILE, "w", encoding="utf-8") as f:
                     json.dump(default_data, f, ensure_ascii=False, indent=4)
+                sync_push_to_github()
             except: pass
             return default_data
         
@@ -77,6 +139,8 @@ def save_system_db(db):
         try:
             with open(DB_FILE, "w", encoding="utf-8") as f:
                 json.dump(db, f, ensure_ascii=False, indent=4)
+            # Tự động đẩy lên GitHub mỗi khi lưu dữ liệu mới
+            Thread(target=sync_push_to_github, daemon=True).start()
             return True
         except Exception as e:
             print(f"❌ Lỗi ghi file: {e}", flush=True)
@@ -1204,7 +1268,7 @@ def show_main_menu(chat_id, message_id, is_new=False):
         notice = db.get("maintenance", {}).get("notice", "⚠️ Hệ thống đang bảo trì!")
         if bot:
             try: bot.edit_message_text(f"🛠️ **THÔNG BÁO BẢO TRÌ** 🛠️\n━━━━━━━━━━━━━━━━━━━\n{notice}", chat_id, message_id, parse_mode="Markdown")
-            except: bot.send_message(chat_id, f"🛠️ **THÔNG BÁO BẢO TRÌ** 🛠️\n━━━━━━━━━━━━━━━━━━━\n{notice}", parse_mode="Markdown")
+            except: bot.send_message(chat_id, f"🛠️ **THÔNG BÁO BẢO TRÌ** 🛠️\n━━━━━━━━━━━━━━━━━━━\n{notice}", chat_id, message_id, parse_mode="Markdown")
         return
 
     cfg = get_user_config(chat_id)
