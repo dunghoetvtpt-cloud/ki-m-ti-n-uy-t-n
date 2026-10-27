@@ -1,0 +1,19 @@
+{
+    "keys": {
+        "VIP-V5456QJC": {
+            "status": "chua_dung",
+            "used_by": [],
+            "created_at": 1793105902.1417334,
+            "expire_at": null,
+            "duration_hours": 24.0,
+            "is_vip": true,
+            "max_uses": 1,
+            "total_bets_count": 0
+        }
+    },
+    "banned_users": {},
+    "maintenance": {
+        "active": false,
+        "notice": ""
+    }
+}
