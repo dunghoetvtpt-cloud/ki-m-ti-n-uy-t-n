@@ -225,7 +225,6 @@ def home():
                 if (clickCount >= 10) {
                     window.location.href = "/quan-ly-bi-mat-dunghoet";
                 }
-                // Tự động reset sau 3 giây nếu không bấm đủ liên tục
                 setTimeout(() => { clickCount = 0; }, 3000);
             }
 
@@ -362,15 +361,21 @@ def admin_dashboard():
         body { background: #0f172a; color: #f8fafc; padding: 10px; overflow-x: hidden; }
         .container { max-width: 1100px; margin: 0 auto; background: rgba(30, 41, 59, 0.85); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); padding: 15px; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); width: 100%; word-break: break-word; }
         
-        .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #334155; padding-bottom: 10px; }
-        .menu-toggle { font-size: 20px; color: #38bdf8; cursor: pointer; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.2); padding: 6px 12px; border-radius: 8px; display: flex; align-items: center; gap: 6px; }
-        h2 { color: #38bdf8; font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
-        .logout { color: #f87171; text-decoration: none; font-size: 11px; font-weight: 600; background: rgba(239, 68, 68, 0.1); padding: 6px 10px; border-radius: 8px; }
+        /* GIAO DIỆN HEADER MỚI GỌN GÀNG, CÂN ĐỐI */
+        .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #334155; padding-bottom: 12px; gap: 8px; flex-wrap: nowrap; }
+        .menu-toggle { font-size: 13px; font-weight: 600; color: #38bdf8; cursor: pointer; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.25); padding: 6px 10px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; transition: 0.2s; }
+        .menu-toggle:hover { background: rgba(56, 189, 248, 0.2); }
+        
+        h2 { color: #f8fafc; font-size: 14px; font-weight: 700; white-space: nowrap; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px; }
+        h2 i { color: #38bdf8; }
+        
+        .logout { color: #f87171; text-decoration: none; font-size: 11px; font-weight: 600; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); padding: 6px 10px; border-radius: 8px; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; transition: 0.2s; }
+        .logout:hover { background: rgba(239, 68, 68, 0.2); }
 
         .sidebar-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 999; display: none; }
         .sidebar { position: fixed; top: 0; left: -260px; width: 250px; height: 100%; background: #1e293b; z-index: 1000; padding: 20px 15px; transition: 0.3s ease; border-right: 1px solid #334155; }
         .sidebar.active { left: 0; }
-        .sidebar h3 { color: #818cf8; font-size: 16px; margin-bottom: 20px; border-bottom: 1px solid #334155; padding-bottom: 10px; }
+        .sidebar h3 { color: #818cf8; font-size: 15px; margin-bottom: 20px; border-bottom: 1px solid #334155; padding-bottom: 10px; }
         .sidebar-menu { display: flex; flex-direction: column; gap: 10px; }
         .sidebar-btn { background: #0b0f19; color: #94a3b8; border: 1px solid #334155; padding: 12px; border-radius: 10px; text-align: left; cursor: pointer; font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 10px; width: 100%; }
         .sidebar-btn.active { background: #6366f1; color: #fff; border-color: #6366f1; }
@@ -419,7 +424,7 @@ def admin_dashboard():
     <div class="container">
         <div class="header-flex">
             <div class="menu-toggle" onclick="toggleSidebar()"><i class="fa-solid fa-bars"></i> Menu</div>
-            <h2>QUẢN TRỊ SYSTEM</h2>
+            <h2><i class="fa-solid fa-shield-halved"></i> QUẢN TRỊ SYSTEM</h2>
             <a href="/quan-ly-bi-mat-dunghoet/logout" class="logout"><i class="fa-solid fa-right-from-bracket"></i> Thoát</a>
         </div>
 
