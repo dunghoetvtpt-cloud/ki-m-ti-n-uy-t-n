@@ -23,7 +23,10 @@ bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN, parse_mode="Markdown") if TELEGRAM_BOT
 app = Flask(__name__)
 app.secret_key = "dung_license_secret_key_1612012"
 
-ADMIN_PASSWORD = "dung1612012"
+# THÔNG TIN TÀI KHOẢN QUẢN TRỊ BÍ MẬT
+ADMIN_USERNAME = "dunghoet"
+ADMIN_PASSWORD = "10091990dung"
+
 LINK4M_API_TOKEN = "68a76c1354de3f0da567ca17"
 
 ip_request_history = {}
@@ -31,10 +34,10 @@ DB_FILE = "system_db.json"
 db_lock = Lock()
 
 # ---------------------------------------------------------
-# 🐙 CẤU HÌNH ĐỒNG BỘ GITHUB API
+# 🐙 CẤU HÌNH ĐỒNG BỘ GITHUB API (CHẠY NGẦM KHÔNG TREO WEB)
 # ---------------------------------------------------------
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
-GITHUB_REPO = os.environ.get("GITHUB_REPO", "") # Ví dụ: dunghoetvtpt-cloud/ten-repo-cua-ong
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
+GITHUB_REPO = os.environ.get("GITHUB_REPO", "").strip()
 GITHUB_FILE_PATH = "system_db.json"
 
 def sync_pull_from_github():
@@ -43,56 +46,50 @@ def sync_pull_from_github():
     try:
         url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}"
         headers = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}
-        res = requests.get(url, headers=headers, timeout=5)
+        res = requests.get(url, headers=headers, timeout=3)
         if res.status_code == 200:
             content_b64 = res.json().get("content", "")
             content_bytes = base64.b64decode(content_b64)
-            with open(DB_FILE, "wb") as f:
-                f.write(content_bytes)
+            with db_lock:
+                with open(DB_FILE, "wb") as f:
+                    f.write(content_bytes)
             print("📥 Đã đồng bộ dữ liệu từ GitHub thành công!", flush=True)
     except Exception as e:
         print(f"⚠️ Lỗi pull từ GitHub: {e}", flush=True)
 
 def sync_push_to_github():
     if not GITHUB_TOKEN or not GITHUB_REPO:
-        return False
-    with db_lock:
-        if not os.path.exists(DB_FILE):
-            return False
-        try:
-            url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}"
-            headers = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}
-            
-            get_res = requests.get(url, headers=headers, timeout=5)
-            sha = None
-            if get_res.status_code == 200:
-                sha = get_res.json().get("sha")
-            
+        return
+    try:
+        with db_lock:
+            if not os.path.exists(DB_FILE): return
             with open(DB_FILE, "rb") as f:
                 file_bytes = f.read()
-            content_b64 = base64.b64encode(file_bytes).decode("utf-8")
+        
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}"
+        headers = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}
+        
+        get_res = requests.get(url, headers=headers, timeout=3)
+        sha = None
+        if get_res.status_code == 200:
+            sha = get_res.json().get("sha")
+        
+        content_b64 = base64.b64encode(file_bytes).decode("utf-8")
+        payload = {"message": "Auto-sync system_db.json from Render bot", "content": content_b64}
+        if sha: payload["sha"] = sha
             
-            payload = {
-                "message": "Auto-sync system_db.json from Render bot",
-                "content": content_b64,
-            }
-            if sha:
-                payload["sha"] = sha
-                
-            put_res = requests.put(url, json=payload, headers=headers, timeout=5)
-            if put_res.status_code in [200, 201]:
-                print("📤 Đã đẩy dữ liệu lên GitHub thành công!", flush=True)
-                return True
-        except Exception as e:
-            print(f"❌ Lỗi push lên GitHub: {e}", flush=True)
-    return False
+        put_res = requests.put(url, json=payload, headers=headers, timeout=3)
+        if put_res.status_code in [200, 201]:
+            print("📤 Đã đẩy dữ liệu lên GitHub thành công!", flush=True)
+    except Exception as e:
+        print(f"❌ Lỗi push lên GitHub: {e}", flush=True)
+
+# Kéo dữ liệu ngầm khi khởi động để tránh treo web
+Thread(target=sync_pull_from_github, daemon=True).start()
 
 # ---------------------------------------------------------
-# 🗄️ HỆ THỐNG LƯU TRỮ DỮ LIỆU KẾT HỢP GITHUB SYNC
+# 🗄️ HỆ THỐNG LƯU TRỮ DỮ LIỆU
 # ---------------------------------------------------------
-# Kéo dữ liệu từ GitHub về ngay khi khởi động app
-sync_pull_from_github()
-
 def load_system_db():
     with db_lock:
         if not os.path.exists(DB_FILE):
@@ -104,7 +101,6 @@ def load_system_db():
             try:
                 with open(DB_FILE, "w", encoding="utf-8") as f:
                     json.dump(default_data, f, ensure_ascii=False, indent=4)
-                sync_push_to_github()
             except: pass
             return default_data
         
@@ -135,16 +131,15 @@ def load_system_db():
             return {"keys": {}, "banned_users": {}, "maintenance": {"active": False, "notice": ""}}
 
 def save_system_db(db):
-    with db_lock:
-        try:
+    try:
+        with db_lock:
             with open(DB_FILE, "w", encoding="utf-8") as f:
                 json.dump(db, f, ensure_ascii=False, indent=4)
-            # Tự động đẩy lên GitHub mỗi khi lưu dữ liệu mới
-            Thread(target=sync_push_to_github, daemon=True).start()
-            return True
-        except Exception as e:
-            print(f"❌ Lỗi ghi file: {e}", flush=True)
-            return False
+        Thread(target=sync_push_to_github, daemon=True).start()
+        return True
+    except Exception as e:
+        print(f"❌ Lỗi ghi file: {e}", flush=True)
+        return False
 
 def load_keys():
     return load_system_db().get("keys", {})
@@ -176,7 +171,7 @@ def delete_key_from_cloud(key_code):
         save_system_db(db)
 
 # ---------------------------------------------------------
-# FLASK WEB ROUTES (GIAO DIỆN LẤY KEY & ADMIN)
+# FLASK WEB ROUTES (TRANG CHỦ & QUẢN TRỊ BÍ MẬT)
 # ---------------------------------------------------------
 @app.route('/')
 def home():
@@ -202,7 +197,6 @@ def home():
             .key-container { background: #0b0f19; border: 2px dashed #6366f1; padding: 15px; border-radius: 16px; margin-top: 15px; }
             .key-text { font-family: monospace; font-size: 16px; color: #4ade80; font-weight: 700; word-break: break-all; margin-bottom: 10px; }
             .btn-copy { background: #22c55e; color: #fff; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
-            .btn-admin { display: inline-block; margin-top: 20px; color: #64748b; text-decoration: none; font-size: 12px; font-weight: 600; }
             .error { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; padding: 10px; border-radius: 10px; font-size: 12px; margin-top: 15px; font-weight: 500; }
         </style>
     </head>
@@ -222,7 +216,6 @@ def home():
                 <a href="/get_link4m" class="btn"><i class="fa-solid fa-rocket"></i> TIẾN HÀNH LẤY KEY (24H)</a>
             {% endif %}
             {% if error %} <div class="error">{{ error }}</div> {% endif %}
-            <a href="/admin" class="btn-admin"><i class="fa-solid fa-user-shield"></i> Đăng nhập Quản trị viên</a>
         </div>
         <script>
             function copyKey() {
@@ -246,7 +239,7 @@ def get_link4m():
     if client_ip not in ip_request_history: ip_request_history[client_ip] = []
     ip_request_history[client_ip] = [t for t in ip_request_history[client_ip] if now - t < 60]
     if len(ip_request_history[client_ip]) >= 3:
-        return redirect(url_for('home', error="⚠️ Phát hiện spam! IP của bạn thao tác quá nhanh, vui lòng thử lại sau 1 phút."))
+        return redirect(url_for('home', error="⚠️ Phát hiện spam! Thao tác quá nhanh, vui lòng thử lại sau 1 phút."))
     ip_request_history[client_ip].append(now)
 
     current_domain = request.host_url.rstrip('/')
@@ -264,37 +257,20 @@ def claim_key():
     new_key = "KEY-XW-" + ''.join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=8))
     key_data = {"status": "chua_dung", "used_by": [], "created_at": time.time(), "expire_at": None, "duration_hours": 24, "is_vip": False, "max_uses": 1, "total_bets_count": 0}
     
-    saved = False
-    for _ in range(3):
-        try:
-            if save_key_to_cloud(new_key, key_data):
-                db_check = load_system_db()
-                if new_key in db_check.get("keys", {}):
-                    saved = True
-                    break
-        except:
-            time.sleep(0.5)
-            
-    if not saved:
-        return redirect(url_for('home', error="⚠️ Lỗi lưu key. Vui lòng thử lại!"))
-        
-    return redirect(url_for('home', key=new_key))
+    if save_key_to_cloud(new_key, key_data):
+        return redirect(url_for('home', key=new_key))
+    return redirect(url_for('home', error="⚠️ Lỗi lưu key. Vui lòng thử lại!"))
 
-@app.route('/api/verify_key')
-def api_verify_key():
-    key_code = request.args.get('key', '').strip()
-    user_id = str(request.args.get('user_id', '')).strip()
-    res = verify_key_with_server(key_code, user_id)
-    return res
-
-@app.route('/admin', methods=['GET', 'POST'])
+@app.route('/quan-ly-bi-mat-dunghoet', methods=['GET', 'POST'])
 def admin_login():
     error = ""
     if request.method == 'POST':
-        if request.form.get('password') == ADMIN_PASSWORD:
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '').strip()
+        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
             session['admin_logged'] = True
             return redirect(url_for('admin_dashboard'))
-        else: error = "Mật khẩu bảo mật không chính xác!"
+        else: error = "Tài khoản hoặc mật khẩu không chính xác!"
     html = """
     <!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Đăng Nhập Quản Trị</title>
@@ -305,21 +281,25 @@ def admin_login():
         body { background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0f172a 100%); color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 15px; overflow-x: hidden; }
         .card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); padding: 30px 20px; border-radius: 24px; width: 100%; max-width: 380px; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); }
         h2 { color: #fff; margin-bottom: 20px; font-size: 20px; font-weight: 700; }
-        input { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #334155; background: #0b0f19; color: #fff; margin-bottom: 15px; font-size: 14px; text-align: center; }
+        input { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #334155; background: #0b0f19; color: #fff; margin-bottom: 12px; font-size: 14px; text-align: center; }
         .btn { width: 100%; background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: #fff; border: none; padding: 12px; border-radius: 12px; font-weight: 700; cursor: pointer; font-size: 14px; }
         .error { color: #f87171; font-size: 12px; margin-bottom: 12px; }
         .back { display: inline-block; margin-top: 15px; color: #64748b; font-size: 12px; text-decoration: none; }
     </style></head>
     <body><div class="card">
-        <h2><i class="fa-solid fa-lock"></i> Quản Trị Hệ Thống</h2>
+        <h2><i class="fa-solid fa-lock"></i> Đăng Nhập Hệ Thống</h2>
         {% if error %}<div class="error">{{ error }}</div>{% endif %}
-        <form method="POST"><input type="password" name="password" placeholder="Nhập mật khẩu admin..." required><button type="submit" class="btn">Đăng Nhập</button></form>
-        <a href="/" class="back"><i class="fa-solid fa-arrow-left"></i> Quay lại trang chủ</a>
+        <form method="POST">
+            <input type="text" name="username" placeholder="Nhập tài khoản..." required autocomplete="off">
+            <input type="password" name="password" placeholder="Nhập mật khẩu..." required>
+            <button type="submit" class="btn">Đăng Nhập</button>
+        </form>
+        <a href="/" class="back"><i class="fa-solid fa-arrow-left"></i> Về trang chủ</a>
     </div></body></html>
     """
     return render_template_string(html, error=error)
 
-@app.route('/admin/dashboard')
+@app.route('/quan-ly-bi-mat-dunghoet/dashboard')
 def admin_dashboard():
     if not session.get('admin_logged'): return redirect(url_for('admin_login'))
     db = load_system_db()
@@ -371,13 +351,11 @@ def admin_dashboard():
         body { background: #0f172a; color: #f8fafc; padding: 10px; overflow-x: hidden; }
         .container { max-width: 1100px; margin: 0 auto; background: rgba(30, 41, 59, 0.85); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); padding: 15px; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); width: 100%; word-break: break-word; }
         
-        /* HEADER & SIDEBAR MENU NAV */
         .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #334155; padding-bottom: 10px; }
         .menu-toggle { font-size: 20px; color: #38bdf8; cursor: pointer; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.2); padding: 6px 12px; border-radius: 8px; display: flex; align-items: center; gap: 6px; }
         h2 { color: #38bdf8; font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
         .logout { color: #f87171; text-decoration: none; font-size: 11px; font-weight: 600; background: rgba(239, 68, 68, 0.1); padding: 6px 10px; border-radius: 8px; }
 
-        /* SIDEBAR DRAWER */
         .sidebar-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 999; display: none; }
         .sidebar { position: fixed; top: 0; left: -260px; width: 250px; height: 100%; background: #1e293b; z-index: 1000; padding: 20px 15px; transition: 0.3s ease; border-right: 1px solid #334155; }
         .sidebar.active { left: 0; }
@@ -389,13 +367,11 @@ def admin_dashboard():
         .tab-content { display: none; width: 100%; }
         .tab-content.active { display: block; }
 
-        /* STATS GRID */
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 15px; width: 100%; }
         .stat-card { background: #0b0f19; border: 1px solid #334155; padding: 12px; border-radius: 12px; text-align: center; }
         .stat-card h4 { font-size: 11px; color: #94a3b8; margin-bottom: 6px; font-weight: 600; }
         .stat-card span { font-size: 18px; font-weight: 800; color: #38bdf8; }
         
-        /* RESPONSIVE TABLE (CHỐNG TRÀN LỀ) */
         .table-responsive { width: 100%; overflow-x: auto; max-width: 100%; border-radius: 10px; border: 1px solid #334155; }
         table { width: 100%; border-collapse: collapse; font-size: 11px; min-width: 650px; }
         th, td { padding: 8px 10px; border-bottom: 1px solid #334155; text-align: left; vertical-align: middle; white-space: nowrap; }
@@ -415,17 +391,9 @@ def admin_dashboard():
         .box-create input { padding: 6px 10px; border-radius: 6px; border: 1px solid #475569; background: #1e293b; color: #fff; font-size: 12px; }
         .input-time { padding: 4px; border-radius: 4px; border: 1px solid #475569; background: #1e293b; color: #fff; width: 50px; text-align: center; font-size: 11px; }
         .toast { position: fixed; bottom: 20px; right: 20px; background: #22c55e; color: white; padding: 8px 14px; border-radius: 8px; font-weight: 600; display: none; box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 1000; font-size: 12px; }
-        
-        .switch { position: relative; display: inline-block; width: 44px; height: 22px; }
-        .switch input { opacity: 0; width: 0; height: 0; }
-        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #334155; transition: .3s; border-radius: 34px; }
-        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
-        input:checked + .slider { background-color: #ef4444; }
-        input:checked + .slider:before { transform: translateX(22px); }
     </style></head>
     <body>
     
-    <!-- SIDEBAR NAV OVERLAY -->
     <div class="sidebar-overlay" id="overlay" onclick="toggleSidebar()"></div>
     <div class="sidebar" id="sidebar">
         <h3><i class="fa-solid fa-bars"></i> DANH MỤC TRANG</h3>
@@ -441,24 +409,14 @@ def admin_dashboard():
         <div class="header-flex">
             <div class="menu-toggle" onclick="toggleSidebar()"><i class="fa-solid fa-bars"></i> Menu</div>
             <h2>QUẢN TRỊ SYSTEM</h2>
-            <a href="/admin/logout" class="logout"><i class="fa-solid fa-right-from-bracket"></i> Thoát</a>
+            <a href="/quan-ly-bi-mat-dunghoet/logout" class="logout"><i class="fa-solid fa-right-from-bracket"></i> Thoát</a>
         </div>
 
-        <!-- TAB 1: QUẢN LÝ KEY -->
         <div id="tab-keys" class="tab-content active">
             <div class="stats-grid">
-                <div class="stat-card">
-                    <h4>Tổng số Key</h4>
-                    <span>{{ total_keys_count }}</span>
-                </div>
-                <div class="stat-card">
-                    <h4>Đã kích hoạt</h4>
-                    <span style="color: #f87171;">{{ used_keys_count }}</span>
-                </div>
-                <div class="stat-card">
-                    <h4>Chưa kích hoạt</h4>
-                    <span style="color: #4ade80;">{{ unused_keys_count }}</span>
-                </div>
+                <div class="stat-card"><h4>Tổng số Key</h4><span>{{ total_keys_count }}</span></div>
+                <div class="stat-card"><h4>Đã kích hoạt</h4><span style="color: #f87171;">{{ used_keys_count }}</span></div>
+                <div class="stat-card"><h4>Chưa kích hoạt</h4><span style="color: #4ade80;">{{ unused_keys_count }}</span></div>
             </div>
 
             <div class="box-create">
@@ -477,7 +435,7 @@ def admin_dashboard():
                 <div style="display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap;">
                     <button class="btn-add" onclick="createCustomKey(false)"><i class="fa-solid fa-plus"></i> Key Thường</button>
                     <button class="btn-vip" onclick="createCustomKey(true)"><i class="fa-solid fa-crown"></i> Code VIP</button>
-                    <a href="/admin/delete_all" class="btn-del-all" onclick="return confirm('Cảnh báo: Xóa sạch toàn bộ kho key?')"><i class="fa-solid fa-trash-can"></i> Xóa Sạch</a>
+                    <a href="/quan-ly-bi-mat-dunghoet/delete_all" class="btn-del-all" onclick="return confirm('Cảnh báo: Xóa sạch toàn bộ kho key?')"><i class="fa-solid fa-trash-can"></i> Xóa Sạch</a>
                 </div>
             </div>
 
@@ -516,13 +474,11 @@ def admin_dashboard():
                                 <small style="color: #f87171;">Chưa dùng/Hết hạn</small>
                             {% endif %}
                         </td>
-                        <td>
-                            <span>{{ used_list|length }}/{{ max_u }} người</span> | <b>{{ tot_bets }} ván</b>
-                        </td>
+                        <td><span>{{ used_list|length }}/{{ max_u }} người</span> | <b>{{ tot_bets }} ván</b></td>
                         <td>
                             <div style="display: flex; gap: 3px;">
                                 <button class="btn-action btn-copy-code" onclick="copyThisKey('{{ k }}')">Copy</button>
-                                <a href="/admin/delete?key={{ k }}" class="btn-action btn-del" onclick="return confirm('Xóa key này?')">Xóa</a>
+                                <a href="/quan-ly-bi-mat-dunghoet/delete?key={{ k }}" class="btn-action btn-del" onclick="return confirm('Xóa key này?')">Xóa</a>
                             </div>
                         </td>
                     </tr>
@@ -531,7 +487,6 @@ def admin_dashboard():
             </div>
         </div>
 
-        <!-- TAB 2: QUẢN LÝ NGƯỜI DÙNG -->
         <div id="tab-users" class="tab-content">
             <div class="table-responsive">
                 <table>
@@ -540,32 +495,19 @@ def admin_dashboard():
                         <th>Cấp Độ</th>
                         <th>Tổng Ván</th>
                         <th>Trạng Thái</th>
-                        <th>Khóa Tạm (Phút)</th>
                         <th>Thao Tác</th>
                     </tr>
                     {% for uid, uinfo in users.items() %}
-                    {% set rem_ban = (uinfo.ban_until - now) if uinfo.ban_until > now else 0 %}
-                    {% set rem_ban_m = (rem_ban // 60)|int %}
                     <tr>
                         <td><code>{{ uid }}</code></td>
                         <td>{% if uinfo.is_vip %}<b style="color:#eab308">VIP</b>{% else %}<span style="color:#94a3b8">Thường</span>{% endif %}</td>
                         <td><b>{{ uinfo.total_bets }} ván</b></td>
                         <td>
                             {% if uinfo.is_banned %}
-                                {% if uinfo.ban_type == 'perm' %}
-                                    <b style="color: #ef4444;">Khóa Vĩnh Viễn</b>
-                                {% else %}
-                                    <b style="color: #f97316;">Khóa ({rem_ban_m}p)</b>
-                                {% endif %}
+                                <b style="color: #ef4444;">Đang Bị Khóa</b>
                             {% else %}
                                 <b style="color: #22c55e;">Bình thường</b>
                             {% endif %}
-                        </td>
-                        <td>
-                            <div style="display: flex; gap: 3px; align-items: center;">
-                                <input type="number" id="ban_time_{{ uid }}" value="24" class="input-time" style="width: 45px;">
-                                <button class="btn-action btn-vip" onclick="banUserAction('{{ uid }}', 'temp')">Khóa</button>
-                            </div>
                         </td>
                         <td>
                             {% if uinfo.is_banned %}
@@ -580,27 +522,12 @@ def admin_dashboard():
             </div>
         </div>
 
-        <!-- TAB 3: HỆ THỐNG & BẢO TRÌ -->
         <div id="tab-system" class="tab-content">
             <div style="background: #0b0f19; padding: 15px; border-radius: 12px; border: 1px solid #334155; margin-bottom: 15px;">
                 <h3 style="font-size: 13px; color: #f87171; margin-bottom: 10px;"><i class="fa-solid fa-triangle-exclamation"></i> Chế Độ Bảo Trì</h3>
-                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                    <label class="switch">
-                        <input type="checkbox" id="maintSwitch" {% if maint.active %}checked{% endif %} onchange="updateMaintenance()">
-                        <span class="slider"></span>
-                    </label>
-                    <span id="maintText" style="font-weight: 700; font-size: 12px;">
-                        {% if maint.active %}<span style="color: #ef4444;">🔴 ĐANG BẬT BẢO TRÌ</span>{% else %}<span style="color: #22c55e;">🟢 ĐANG HOẠT ĐỘNG</span>{% endif %}
-                    </span>
-                </div>
                 <textarea id="maintNotice" rows="3" style="width: 100%; background: #1e293b; color: #fff; border: 1px solid #475569; border-radius: 6px; padding: 8px; font-size: 12px; margin-bottom: 8px;">{{ maint.notice or "⚠️ Hệ thống đang bảo trì định kỳ!" }}</textarea>
-                <button class="btn-add" onclick="updateMaintenance()"><i class="fa-solid fa-floppy-disk"></i> Lưu Thông Báo</button>
-            </div>
-
-            <div style="background: #0b0f19; padding: 15px; border-radius: 12px; border: 1px solid #334155;">
-                <h3 style="font-size: 13px; color: #38bdf8; margin-bottom: 10px;"><i class="fa-solid fa-bullhorn"></i> Gửi Thông Báo Tức Thời</h3>
-                <textarea id="broadcastMsg" rows="3" placeholder="Nhập nội dung..." style="width: 100%; background: #1e293b; color: #fff; border: 1px solid #475569; border-radius: 6px; padding: 8px; font-size: 12px; margin-bottom: 8px;"></textarea>
-                <button class="btn-vip" onclick="sendBroadcast()"><i class="fa-solid fa-paper-plane"></i> Gửi Broadcast</button>
+                <button class="btn-add" onclick="updateMaintenance(true)">Bật Bảo Trì</button>
+                <button class="btn-vip" onclick="updateMaintenance(false)">Tắt Bảo Trì</button>
             </div>
         </div>
     </div>
@@ -610,11 +537,9 @@ def admin_dashboard():
         const s = document.getElementById("sidebar");
         const o = document.getElementById("overlay");
         if (s.classList.contains("active")) {
-            s.classList.remove("active");
-            o.style.display = "none";
+            s.classList.remove("active"); o.style.display = "none";
         } else {
-            s.classList.add("active");
-            o.style.display = "block";
+            s.classList.add("active"); o.style.display = "block";
         }
     }
     function showToast(msg) {
@@ -636,67 +561,43 @@ def admin_dashboard():
         let hours = document.getElementById("customHours").value;
         let qty = document.getElementById("customQty").value;
         let maxUses = document.getElementById("maxUses").value;
-        fetch("/admin/create_custom_key", {
+        fetch("/quan-ly-bi-mat-dunghoet/create_custom_key", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ hours: hours, quantity: qty, max_uses: maxUses, is_vip: isVip })
-        })
-        .then(res => res.json())
-        .then(data => { if(data.success) { location.reload(); } else { alert("Lỗi: " + data.msg); } });
+        }).then(res => res.json()).then(data => { if(data.success) { location.reload(); } else { alert("Lỗi: " + data.msg); } });
     }
     function modifyKeyTime(key, mode) {
         let hours = document.getElementById("time_" + key).value;
-        fetch("/admin/modify_key_time", {
+        fetch("/quan-ly-bi-mat-dunghoet/modify_key_time", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ key: key, hours: hours, mode: mode })
-        })
-        .then(res => res.json())
-        .then(data => {
-            if(data.success) {
-                showToast("✅ Đã cập nhật giờ!");
-                setTimeout(() => { location.reload(); }, 800);
-            } else { alert("Lỗi: " + data.msg); }
+        }).then(res => res.json()).then(data => {
+            if(data.success) { showToast("✅ Đã cập nhật giờ!"); setTimeout(() => { location.reload(); }, 800); } else { alert("Lỗi: " + data.msg); }
         });
     }
     function banUserAction(uid, banType) {
-        let minutes = document.getElementById("ban_time_" + uid) ? document.getElementById("ban_time_" + uid).value : 0;
-        fetch("/admin/ban_user_advanced", {
+        fetch("/quan-ly-bi-mat-dunghoet/ban_user_advanced", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ user_id: uid, ban_type: banType, minutes: minutes })
-        })
-        .then(res => res.json())
-        .then(data => { if(data.success) { showToast("✅ Đã cập nhật!"); setTimeout(() => { location.reload(); }, 800); } });
+            body: JSON.stringify({ user_id: uid, ban_type: banType, minutes: 0 })
+        }).then(res => res.json()).then(data => { if(data.success) { showToast("✅ Đã cập nhật!"); setTimeout(() => { location.reload(); }, 800); } });
     }
-    function updateMaintenance() {
-        let active = document.getElementById("maintSwitch").checked;
+    function updateMaintenance(active) {
         let notice = document.getElementById("maintNotice").value;
-        fetch("/admin/update_maintenance", {
+        fetch("/quan-ly-bi-mat-dunghoet/update_maintenance", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ active: active, notice: notice })
-        })
-        .then(res => res.json())
-        .then(data => { if(data.success) { showToast("✅ Cập nhật bảo trì!"); setTimeout(() => { location.reload(); }, 1000); } });
-    }
-    function sendBroadcast() {
-        let msg = document.getElementById("broadcastMsg").value;
-        if(!msg) { alert("Vui lòng nhập nội dung!"); return; }
-        fetch("/admin/broadcast", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: msg })
-        })
-        .then(res => res.json())
-        .then(data => { if(data.success) { showToast("✅ Đã gửi thông báo!"); document.getElementById("broadcastMsg").value = ""; } });
+        }).then(res => res.json()).then(data => { if(data.success) { showToast("✅ Đã cập nhật bảo trì!"); setTimeout(() => { location.reload(); }, 1000); } });
     }
     </script>
     </body></html>
     """
     return render_template_string(html, keys=keys_db, users=users_list, maint=maint, now=now, total_keys_count=total_keys_count, used_keys_count=used_keys_count, unused_keys_count=unused_keys_count)
 
-@app.route('/admin/create_custom_key', methods=['POST'])
+@app.route('/quan-ly-bi-mat-dunghoet/create_custom_key', methods=['POST'])
 def admin_create_custom_key():
     if not session.get('admin_logged'): return jsonify({"success": False, "msg": "Chưa đăng nhập!"})
     try:
@@ -709,18 +610,15 @@ def admin_create_custom_key():
         
         db = load_system_db()
         if "keys" not in db: db["keys"] = {}
-        
         for _ in range(quantity):
             new_key = prefix + ''.join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=8))
             db["keys"][new_key] = {"status": "chua_dung", "used_by": [], "created_at": time.time(), "expire_at": None, "duration_hours": hours, "is_vip": is_vip, "max_uses": max_uses, "total_bets_count": 0}
             
-        if save_system_db(db):
-            return jsonify({"success": True})
-        else:
-            return jsonify({"success": False, "msg": "Không thể ghi dữ liệu cục bộ!"})
+        save_system_db(db)
+        return jsonify({"success": True})
     except Exception as e: return jsonify({"success": False, "msg": str(e)})
 
-@app.route('/admin/modify_key_time', methods=['POST'])
+@app.route('/quan-ly-bi-mat-dunghoet/modify_key_time', methods=['POST'])
 def admin_modify_key_time():
     if not session.get('admin_logged'): return jsonify({"success": False, "msg": "Chưa đăng nhập!"})
     try:
@@ -746,33 +644,26 @@ def admin_modify_key_time():
         return jsonify({"success": True})
     except Exception as e: return jsonify({"success": False, "msg": str(e)})
 
-@app.route('/admin/ban_user_advanced', methods=['POST'])
+@app.route('/quan-ly-bi-mat-dunghoet/ban_user_advanced', methods=['POST'])
 def admin_ban_user_advanced():
     if not session.get('admin_logged'): return jsonify({"success": False, "msg": "Chưa đăng nhập!"})
     try:
         req_data = request.json or {}
         uid = str(req_data.get("user_id"))
         ban_type = req_data.get("ban_type")
-        minutes = float(req_data.get("minutes", 0))
-        
         db = load_system_db()
-        if "banned_users" not in db or isinstance(db["banned_users"], list):
-            db["banned_users"] = {}
+        if "banned_users" not in db or isinstance(db["banned_users"], list): db["banned_users"] = {}
             
         if ban_type == "unban":
             if uid in db["banned_users"]: del db["banned_users"][uid]
         elif ban_type == "perm":
             db["banned_users"][uid] = {"type": "perm", "until": 0}
-        elif ban_type == "temp":
-            until_time = time.time() + (minutes * 60)
-            db["banned_users"][uid] = {"type": "temp", "until": until_time, "minutes": minutes}
             
         save_system_db(db)
-        broadcast_system_status_change()
         return jsonify({"success": True})
     except Exception as e: return jsonify({"success": False, "msg": str(e)})
 
-@app.route('/admin/update_maintenance', methods=['POST'])
+@app.route('/quan-ly-bi-mat-dunghoet/update_maintenance', methods=['POST'])
 def admin_update_maintenance():
     if not session.get('admin_logged'): return jsonify({"success": False, "msg": "Chưa đăng nhập!"})
     try:
@@ -780,41 +671,17 @@ def admin_update_maintenance():
         db = load_system_db()
         db["maintenance"] = {"active": bool(req_data.get("active")), "notice": req_data.get("notice", "")}
         save_system_db(db)
-        broadcast_system_status_change()
         return jsonify({"success": True})
     except Exception as e: return jsonify({"success": False, "msg": str(e)})
 
-@app.route('/admin/broadcast', methods=['POST'])
-def admin_broadcast():
-    if not session.get('admin_logged'): return jsonify({"success": False, "msg": "Chưa đăng nhập!"})
-    try:
-        msg_text = request.json.get("message", "").strip()
-        db = load_system_db()
-        all_users = set()
-        for k, info in db.get("keys", {}).items():
-            for uid in info.get("used_by", []): all_users.add(str(uid))
-        sent_count = 0
-        def send_and_auto_delete(chat_id_target):
-            try:
-                if bot:
-                    sent = bot.send_message(chat_id_target, f"📢 **THÔNG BÁO TỪ HỆ THỐNG:**\n\n{msg_text}\n\n*(Tin nhắn tự xóa sau 15 giây)*", parse_mode="Markdown")
-                    time.sleep(15)
-                    bot.delete_message(chat_id_target, sent.message_id)
-            except: pass
-        for u in all_users:
-            Thread(target=send_and_auto_delete, args=(u,), daemon=True).start()
-            sent_count += 1
-        return jsonify({"success": True, "sent_count": sent_count})
-    except Exception as e: return jsonify({"success": False, "msg": str(e)})
-
-@app.route('/admin/delete')
+@app.route('/quan-ly-bi-mat-dunghoet/delete')
 def admin_delete():
     if not session.get('admin_logged'): return redirect(url_for('admin_login'))
     k = request.args.get('key')
     if k: delete_key_from_cloud(k)
     return redirect(url_for('admin_dashboard'))
 
-@app.route('/admin/delete_all')
+@app.route('/quan-ly-bi-mat-dunghoet/delete_all')
 def admin_delete_all():
     if not session.get('admin_logged'): return redirect(url_for('admin_login'))
     db = load_system_db()
@@ -822,11 +689,14 @@ def admin_delete_all():
     save_system_db(db)
     return redirect(url_for('admin_dashboard'))
 
-@app.route('/admin/logout')
+@app.route('/quan-ly-bi-mat-dunghoet/logout')
 def admin_logout():
     session.pop('admin_logged', None)
     return redirect(url_for('admin_login'))
 
+# ---------------------------------------------------------
+# BOT TELEGRAM & ENGINE GAME ĐẦY ĐỦ (ESCAPE & SPRINT)
+# ---------------------------------------------------------
 user_data = {}
 data_lock = Lock()
 GAME_NAMES_VI = {"escape": "Vua Thoát Hiểm", "sprint": "Đua Tốc Độ"}
@@ -949,37 +819,11 @@ def check_key_validity(chat_id):
     cfg["escape"]["global_running"] = False; cfg["sprint"]["global_running"] = False
     return False
 
-def broadcast_system_status_change():
-    def worker():
-        with data_lock:
-            chat_ids = list(user_data.keys())
-        for cid in chat_ids:
-            try:
-                cfg = user_data.get(cid, {})
-                menu_id = cfg.get("menu_msg_id") or cfg.get("prompt_msg_id")
-                if menu_id and bot:
-                    is_banned, ban_msg = check_user_ban_status(cid)
-                    db = load_system_db()
-                    is_maint = db.get("maintenance", {}).get("active", False)
-                    notice = db.get("maintenance", {}).get("notice", "⚠️ Hệ thống đang bảo trì!")
-                    
-                    if is_banned:
-                        bot.edit_message_text(ban_msg, cid, menu_id, parse_mode="Markdown")
-                    elif is_maint:
-                        bot.edit_message_text(f"🛠️ **THÔNG BÁO BẢO TRÌ** 🛠️\n━━━━━━━━━━━━━━━━━━━\n{notice}", cid, menu_id, parse_mode="Markdown")
-                    else:
-                        show_main_menu(cid, menu_id, is_new=False)
-            except: pass
-    Thread(target=worker, daemon=True).start()
-
 def reset_user_wait_flags(cfg):
     cfg["waiting_for_link"] = None; cfg["waiting_for_bet"] = None
     cfg["waiting_for_max_losses"] = None; cfg["waiting_for_stop_loss"] = None
     cfg["waiting_for_take_profit"] = None; cfg["waiting_for_max_rounds_vip"] = None
 
-# ---------------------------------------------------------
-# TELEGRAM BOT LOGIC
-# ---------------------------------------------------------
 if bot:
     @bot.message_handler(commands=['start'])
     def tele_start(message):
