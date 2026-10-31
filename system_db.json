@@ -35,10 +35,12 @@
             "total_bets_count": 0
         },
         "KEY-XW-6IVXH6EE": {
-            "status": "chua_dung",
-            "used_by": [],
+            "status": "da_dung",
+            "used_by": [
+                "7472932435"
+            ],
             "created_at": 1793352170.2192566,
-            "expire_at": null,
+            "expire_at": 1793501658.48071,
             "duration_hours": 24,
             "is_vip": false,
             "max_uses": 1,
