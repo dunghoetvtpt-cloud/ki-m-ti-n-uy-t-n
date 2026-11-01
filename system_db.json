@@ -55,16 +55,6 @@
             "is_vip": false,
             "max_uses": 1,
             "total_bets_count": 0
-        },
-        "KEY-XW-O5HJRQDD": {
-            "status": "chua_dung",
-            "used_by": [],
-            "created_at": 1793505329.285604,
-            "expire_at": null,
-            "duration_hours": 24,
-            "is_vip": false,
-            "max_uses": 1,
-            "total_bets_count": 0
         }
     },
     "banned_users": {},
