@@ -1,5 +1,16 @@
 {
-    "keys": {},
+    "keys": {
+        "KEY-XW-KIB713XL": {
+            "status": "chua_dung",
+            "used_by": [],
+            "created_at": 1793862946.4441507,
+            "expire_at": null,
+            "duration_hours": 24,
+            "is_vip": false,
+            "max_uses": 1,
+            "total_bets_count": 0
+        }
+    },
     "banned_users": {},
     "maintenance": {
         "active": false,
