@@ -1,18 +1,5 @@
 {
-    "keys": {
-        "VIP-TIOSO10Q": {
-            "status": "da_dung",
-            "used_by": [
-                "9056805534"
-            ],
-            "created_at": 1794410428.7174423,
-            "expire_at": 1794568795.3137925,
-            "duration_hours": 24.0,
-            "is_vip": true,
-            "max_uses": 1,
-            "total_bets_count": 1
-        }
-    },
+    "keys": {},
     "banned_users": {},
     "maintenance": {
         "active": false,
