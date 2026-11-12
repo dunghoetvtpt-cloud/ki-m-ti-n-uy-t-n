@@ -202,7 +202,6 @@ def home():
     </head>
     <body>
         <div class="card">
-            <!-- Ô icon tia sét bấm 10 lần để mở admin -->
             <div class="icon-box" id="secretLightning" onclick="handleSecretClick()"><i class="fa-solid fa-bolt"></i></div>
             <span class="badge">Hệ Thống Tự Động 24/7</span>
             <h2>XWORLD GATEWAY</h2>
@@ -360,18 +359,13 @@ def admin_dashboard():
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
         body { background: #0f172a; color: #f8fafc; padding: 10px; overflow-x: hidden; }
         .container { max-width: 1100px; margin: 0 auto; background: rgba(30, 41, 59, 0.85); backdrop-filter: blur(20px); border: 1px solid rgba(129, 140, 248, 0.2); padding: 15px; border-radius: 16px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7); width: 100%; word-break: break-word; }
-        
-        /* GIAO DIỆN HEADER MỚI GỌN GÀNG, CÂN ĐỐI */
         .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #334155; padding-bottom: 12px; gap: 8px; flex-wrap: nowrap; }
         .menu-toggle { font-size: 13px; font-weight: 600; color: #38bdf8; cursor: pointer; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.25); padding: 6px 10px; border-radius: 8px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; transition: 0.2s; }
         .menu-toggle:hover { background: rgba(56, 189, 248, 0.2); }
-        
         h2 { color: #f8fafc; font-size: 14px; font-weight: 700; white-space: nowrap; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px; }
         h2 i { color: #38bdf8; }
-        
         .logout { color: #f87171; text-decoration: none; font-size: 11px; font-weight: 600; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); padding: 6px 10px; border-radius: 8px; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; transition: 0.2s; }
         .logout:hover { background: rgba(239, 68, 68, 0.2); }
-
         .sidebar-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 999; display: none; }
         .sidebar { position: fixed; top: 0; left: -260px; width: 250px; height: 100%; background: #1e293b; z-index: 1000; padding: 20px 15px; transition: 0.3s ease; border-right: 1px solid #334155; }
         .sidebar.active { left: 0; }
@@ -379,21 +373,17 @@ def admin_dashboard():
         .sidebar-menu { display: flex; flex-direction: column; gap: 10px; }
         .sidebar-btn { background: #0b0f19; color: #94a3b8; border: 1px solid #334155; padding: 12px; border-radius: 10px; text-align: left; cursor: pointer; font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 10px; width: 100%; }
         .sidebar-btn.active { background: #6366f1; color: #fff; border-color: #6366f1; }
-
         .tab-content { display: none; width: 100%; }
         .tab-content.active { display: block; }
-
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 15px; width: 100%; }
         .stat-card { background: #0b0f19; border: 1px solid #334155; padding: 12px; border-radius: 12px; text-align: center; }
         .stat-card h4 { font-size: 11px; color: #94a3b8; margin-bottom: 6px; font-weight: 600; }
         .stat-card span { font-size: 18px; font-weight: 800; color: #38bdf8; }
-        
         .table-responsive { width: 100%; overflow-x: auto; max-width: 100%; border-radius: 10px; border: 1px solid #334155; }
         table { width: 100%; border-collapse: collapse; font-size: 11px; min-width: 650px; }
         th, td { padding: 8px 10px; border-bottom: 1px solid #334155; text-align: left; vertical-align: middle; white-space: nowrap; }
         th { color: #94a3b8; font-weight: 600; background: #0b0f19; }
         code { background: #0b0f19; padding: 3px 6px; border-radius: 6px; color: #4ade80; font-family: monospace; font-size: 11px; }
-        
         .btn-action { border: none; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 10px; font-weight: 600; display: inline-flex; align-items: center; gap: 3px; text-decoration: none; }
         .btn-add-time { background: rgba(34, 197, 94, 0.2); color: #4ade80; }
         .btn-sub-time { background: rgba(239, 68, 68, 0.2); color: #f87171; }
@@ -402,7 +392,6 @@ def admin_dashboard():
         .btn-copy-code { background: rgba(99, 102, 241, 0.15); color: #818cf8; }
         .btn-add { background: #22c55e; color: #fff; border: none; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 11px; }
         .btn-vip { background: #eab308; color: #000; border: none; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 11px; }
-
         .box-create { background: #0b0f19; padding: 12px; border-radius: 12px; margin-bottom: 15px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; border: 1px solid #334155; width: 100%; }
         .box-create input { padding: 6px 10px; border-radius: 6px; border: 1px solid #475569; background: #1e293b; color: #fff; font-size: 12px; }
         .input-time { padding: 4px; border-radius: 4px; border: 1px solid #475569; background: #1e293b; color: #fff; width: 50px; text-align: center; font-size: 11px; }
