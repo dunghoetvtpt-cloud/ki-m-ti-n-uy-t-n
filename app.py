@@ -1,13 +1,24 @@
 import os
+import sys
 import json
 import time
 import random
 import base64
 import requests
-from threading import Thread, Lock
+from urllib.parse import urlparse, parse_qs
+from threading import Thread, Lock, Event
 from decimal import Decimal, ROUND_DOWN
 from flask import Flask, render_template_string, request, redirect, url_for, session, jsonify
 
+try:
+    import websocket
+except ImportError:
+    os.system(f"{sys.executable} -m pip install --no-cache-dir websocket-client")
+    import websocket
+
+# ---------------------------------------------------------
+# CẤU HÌNH HỆ THỐNG FLASK & BẢO MẬT
+# ---------------------------------------------------------
 app = Flask(__name__)
 app.secret_key = "dung_license_secret_key_1612012"
 
@@ -36,6 +47,7 @@ def sync_pull_from_github():
             content_bytes = base64.b64decode(res.json().get("content", ""))
             with db_lock:
                 with open(DB_FILE, "wb") as f: f.write(content_bytes)
+            print("📥 Đã đồng bộ dữ liệu từ GitHub thành công!", flush=True)
     except Exception as e: print(f"⚠️ Lỗi pull GitHub: {e}", flush=True)
 
 def sync_push_to_github():
@@ -56,6 +68,9 @@ def sync_push_to_github():
 
 Thread(target=sync_pull_from_github, daemon=True).start()
 
+# ---------------------------------------------------------
+# 🗄️ QUẢN LÝ DATABASE CLOUD
+# ---------------------------------------------------------
 def load_system_db():
     with db_lock:
         if not os.path.exists(DB_FILE):
@@ -95,7 +110,118 @@ def verify_key(key_code):
     return True, "Hợp lệ"
 
 # ---------------------------------------------------------
-# FLASK WEB ROUTES
+# 🎮 ENGINE CHẠY NGẦM ĐA LUỒNG CHO 3 GAME
+# ---------------------------------------------------------
+active_engines = {}
+engine_lock = Lock()
+
+class MultiGameEngine:
+    def __init__(self, game_type, uid, skey, base_bet, asset_type):
+        self.game_type = game_type
+        self.uid = uid
+        self.skey = skey
+        self.base_bet = float(base_bet)
+        self.asset_type = asset_type
+        self.running = True
+        self.stats = {"total_bets": 0, "wins": 0, "losses": 0, "profit": Decimal("0")}
+
+    def start(self):
+        if self.game_type == "escape":
+            Thread(target=self.run_escape, daemon=True).start()
+        elif self.game_type == "sprint":
+            Thread(target=self.run_sprint, daemon=True).start()
+        elif self.game_type == "winhash":
+            Thread(target=self.run_winhash, daemon=True).start()
+
+    def run_escape(self):
+        WS_URL = "wss://api.escapemaster.net/escape_master/ws"
+        session = requests.Session()
+        session.headers.update({"User-Agent": "Mozilla/5.0", "Origin": "https://escapemaster.net"})
+        
+        def H():
+            return {"Content-Type": "application/json", "user-id": str(self.uid), "user-login": "login_v2", "user-secret-key": self.skey, "xb-language": "vi-VN"}
+
+        def on_message(ws, msg):
+            if not self.running: return
+            try:
+                d = json.loads(msg)
+                if d.get("msg_type") == "notify_count_down":
+                    cd = d.get("count_down", 0)
+                    if cd <= 5:
+                        room = random.randint(1, 8)
+                        requests.post("https://api.escapemaster.net/escape_game/enter_room", json={"asset_type": self.asset_type, "user_id": int(self.uid), "room_id": room}, headers=H(), timeout=3)
+                        res = requests.post("https://api.escapemaster.net/escape_game/bet", json={"asset_type": self.asset_type, "user_id": int(self.uid), "room_id": room, "bet_amount": self.base_bet}, headers=H(), timeout=3)
+                        if res.status_code == 200 and res.json().get("code") == 0:
+                            self.stats["total_bets"] += 1
+                elif d.get("msg_type") == "notify_result":
+                    aw = float(d.get("award_amount", 0))
+                    bt = float(d.get("bet_amount", 0))
+                    if aw > bt:
+                        self.stats["wins"] += 1
+                        self.stats["profit"] += (Decimal(str(aw)) - Decimal(str(bt)))
+                    else:
+                        self.stats["losses"] += 1
+                        self.stats["profit"] -= Decimal(str(bt))
+            except: pass
+
+        def on_open(ws):
+            ws.send(json.dumps({"msg_type": "handle_enter_game", "asset_type": self.asset_type, "user_id": int(self.uid), "user_secret_key": self.skey}))
+
+        while self.running:
+            try:
+                ws = websocket.WebSocketApp(WS_URL, on_message=on_message, on_open=on_open)
+                ws.run_forever(ping_interval=15, ping_timeout=10)
+            except: time.sleep(5)
+
+    def run_sprint(self):
+        base_api = "https://api.sprintrun.win"
+        headers = {"accept": "*/*", "content-type": "application/json", "user-id": str(self.uid), "user-login": "login_v2", "user-secret-key": self.skey}
+        session = requests.Session()
+        cb = Decimal(str(self.base_bet))
+        
+        while self.running:
+            try:
+                r = session.get(f"{base_api}/sprint/home?asset={self.asset_type}", headers=headers, timeout=10)
+                if r.status_code == 200:
+                    data = r.json().get("data", {})
+                    iid = data.get("issue_id"); exp = int(data.get("expire_seconds", 50)); athletes = data.get("athlete_list", [])
+                    if iid and len(athletes) >= 3:
+                        chosen = random.sample(athletes, 3)
+                        each = (cb / Decimal(3)).quantize(Decimal("0.000001"), rounding=ROUND_DOWN)
+                        for a in chosen:
+                            session.post(f"{base_api}/sprint/bet", json={"issue_id": iid, "bet_group": "winner", "asset_type": self.asset_type, "athlete_id": a["id"], "bet_amount": float(each)}, headers=headers, timeout=5)
+                        self.stats["total_bets"] += 1
+                        time.sleep(exp + 2)
+            except: pass
+            time.sleep(3)
+
+    def run_winhash(self):
+        H = {"accept": "*/*", "content-type": "application/json", "user-id": str(self.uid), "user-login": "login_v2", "user-secret-key": self.skey}
+        BASE = "https://api.winhash.net/lucky_game/v2"
+        cur = self.base_bet / 2
+
+        while self.running:
+            try:
+                r = requests.get(f"https://api.winhash.net/lucky_game/home?game_id=1&asset={self.asset_type}", headers=H, timeout=10)
+                data = r.json().get("data", {})
+                iid = data.get("issue_id")
+                items = data.get("bet_section", {}).get("sum_in_range", {}).get("items", [])
+                small = next((x for x in items if x.get("props", {}).get("value") == [3, 9]), None)
+                big = next((x for x in items if x.get("props", {}).get("value") == [12, 18]), None)
+                exp = int(data.get("expire_seconds", 50))
+                
+                if iid and small and big:
+                    requests.post(f"{BASE}/create_order", headers=H, json={
+                        "game_id": 1, "issue_id": iid,
+                        "items": [{"id": small["id"], "amount": str(cur), "asset": self.asset_type}, {"id": big["id"], "amount": str(cur), "asset": self.asset_type}]
+                    }, timeout=10)
+                    self.stats["total_bets"] += 1
+                    time.sleep(exp + 5)
+            except: pass
+            time.sleep(5)
+
+# ---------------------------------------------------------
+# FLASK WEB ROUTES & GIAO DIỆN
 # ---------------------------------------------------------
 @app.route('/')
 def index():
@@ -135,7 +261,7 @@ def login_page():
     <body>
         <div class="card">
             <h2><i class="fa-solid fa-key"></i> KÍCH HOẠT KEY 24H</h2>
-            <p>Nhập mã bản quyền của bạn để truy cập hệ thống Auto Tool.</p>
+            <p>Nhập mã bản quyền của bạn để truy cập hệ thống 3 Game Auto.</p>
             {% if error %}<div class="error">{{ error }}</div>{% endif %}
             <form method="POST">
                 <input type="text" name="key" placeholder="KEY-XW-XXXXXXXX" required autocomplete="off">
@@ -192,7 +318,7 @@ def dashboard():
     
     html = """
     <!DOCTYPE html><html lang="vi"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>XWorld Tool Dashboard</title>
+    <title>XWorld Multi-Game Dashboard</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -202,7 +328,6 @@ def dashboard():
         .menu-btn { background: none; border: none; color: #38bdf8; font-size: 20px; cursor: pointer; }
         h1 { font-size: 16px; font-weight: 700; color: #fff; }
         
-        /* Sidebar Menu 3 Gạch */
         .sidebar-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: none; z-index: 998; }
         .sidebar { position: fixed; top: 0; left: -260px; width: 250px; height: 100%; background: #1e293b; z-index: 999; padding: 20px; transition: 0.3s; border-right: 1px solid #334155; }
         .sidebar.active { left: 0; }
@@ -210,7 +335,6 @@ def dashboard():
         .sidebar a { display: flex; align-items: center; gap: 10px; color: #94a3b8; text-decoration: none; padding: 12px; border-radius: 8px; font-weight: 600; font-size: 13px; margin-bottom: 8px; transition: 0.2s; }
         .sidebar a:hover, .sidebar a.active { background: #6366f1; color: #fff; }
         
-        /* Nội dung chính */
         .container { max-width: 800px; margin: 20px auto; padding: 0 15px; width: 100%; flex: 1; }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
@@ -228,27 +352,26 @@ def dashboard():
     <div class="sidebar-overlay" id="overlay" onclick="toggleSidebar()"></div>
     <div class="sidebar" id="sidebar">
         <h3><i class="fa-solid fa-bars"></i> MENU HỆ THỐNG</h3>
-        <a href="#" onclick="switchTab('tab-tool')" class="active" id="link-tool"><i class="fa-solid fa-robot"></i> Chạy Tool Auto</a>
+        <a href="#" onclick="switchTab('tab-tool')" class="active" id="link-tool"><i class="fa-solid fa-robot"></i> Chạy 3 Game Auto</a>
         <a href="#" onclick="switchTab('tab-getkey')" id="link-getkey"><i class="fa-solid fa-key"></i> Tab Lấy Key (24h)</a>
         <a href="/login" class="logout"><i class="fa-solid fa-right-from-bracket"></i> Đăng Xuất</a>
     </div>
 
     <header>
         <button class="menu-btn" onclick="toggleSidebar()"><i class="fa-solid fa-bars"></i></button>
-        <h1>XWORLD MULTI-TOOL</h1>
+        <h1>XWORLD MULTI-GAME TOOL</h1>
         <div style="width: 24px;"></div>
     </header>
 
     <div class="container">
-        <!-- TAB 1: CHẠY TOOL ĐỦ 3 GAME -->
         <div id="tab-tool" class="tab-content active">
             <div class="card">
-                <h2><i class="fa-solid fa-gamepad"></i> Cấu Hình Game Auto Bet</h2>
+                <h2><i class="fa-solid fa-gamepad"></i> Cấu Hình 3 Game Auto Bet</h2>
                 <div class="form-group">
                     <label>Chọn Game:</label>
                     <select id="gameSelect">
-                        <option value="escape">🕹️ Vua Thoát Hiểm (Escape Master)</option>
-                        <option value="sprint">🏃 Đua Tốc Độ (SprintRun)</option>
+                        <option value="escape">🕹️ Escape Master (Vua Thoát Hiểm)</option>
+                        <option value="sprint">🏃 SprintRun (Đua Tốc Độ)</option>
                         <option value="winhash">🎲 Winhash Lucky Game</option>
                     </select>
                 </div>
@@ -261,14 +384,21 @@ def dashboard():
                     <input type="text" id="secretKey" placeholder="Nhập Secret Key...">
                 </div>
                 <div class="form-group">
-                    <label>Mức Cược Cơ Bản / Tổng Cược:</label>
+                    <label>Mức Cược Cơ Bản / Tổng Build:</label>
                     <input type="number" id="baseBet" value="1.0">
                 </div>
-                <button class="btn-run" onclick="toggleRunTool()" id="runBtn">🚀 BẮT ĐẦU CHẠY TOOL</button>
+                <div class="form-group">
+                    <label>Loại Tài Sản (Asset):</label>
+                    <select id="assetType">
+                        <option value="BUILD">BUILD</option>
+                        <option value="WORLD">WORLD</option>
+                        <option value="USDT">USDT</option>
+                    </select>
+                </div>
+                <button class="btn-run" onclick="toggleRunTool()" id="runBtn">🚀 BẮT ĐẦU CHẠY 3 GAME</button>
             </div>
         </div>
 
-        <!-- TAB 2: LẤY KEY -->
         <div id="tab-getkey" class="tab-content">
             <div class="card" style="text-align: center;">
                 <h2><i class="fa-solid fa-key"></i> Lấy Mã Bản Quyền 24 Giờ</h2>
@@ -297,16 +427,35 @@ def dashboard():
         }
         let isRunning = false;
         function toggleRunTool() {
+            const game = document.getElementById("gameSelect").value;
+            const userId = document.getElementById("userId").value;
+            const secretKey = document.getElementById("secretKey").value;
+            const baseBet = document.getElementById("baseBet").value;
+            const assetType = document.getElementById("assetType").value;
+
+            if(!userId || !secretKey) {
+                alert("Vui lòng nhập đầy đủ User ID và Secret Key!");
+                return;
+            }
+
             isRunning = !isRunning;
             const btn = document.getElementById("runBtn");
             if (isRunning) {
-                btn.style.background = "#ef4444";
-                btn.innerHTML = "⏹️ DỪNG TOOL";
-                alert("Đã khởi động tiến trình Auto Bet cho game đã chọn!");
+                fetch('/start_engine', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({game: game, userId: userId, secretKey: secretKey, baseBet: baseBet, assetType: assetType})
+                }).then(res => res.json()).then(data => {
+                    btn.style.background = "#ef4444";
+                    btn.innerHTML = "⏹️ DỪNG TOOL";
+                    alert(data.msg);
+                });
             } else {
-                btn.style.background = "#22c55e";
-                btn.innerHTML = "🚀 BẮT ĐẦU CHẠY TOOL";
-                alert("Đã dừng tiến trình tool!");
+                fetch('/stop_engine', {method: 'POST'}).then(res => res.json()).then(data => {
+                    btn.style.background = "#22c55e";
+                    btn.innerHTML = "🚀 BẮT ĐẦU CHẠY 3 GAME";
+                    alert(data.msg);
+                });
             }
         }
     </script>
@@ -314,5 +463,34 @@ def dashboard():
     """
     return html
 
+@app.route('/start_engine', methods=['POST'])
+def start_engine():
+    data = request.json or {}
+    game = data.get("game")
+    uid = data.get("userId")
+    skey = data.get("secretKey")
+    base_bet = data.get("baseBet", 1.0)
+    asset_type = data.get("assetType", "BUILD")
+
+    with engine_lock:
+        for k, eng in list(active_engines.items()):
+            eng.running = False
+        active_engines.clear()
+
+        runner = MultiGameEngine(game, uid, skey, base_bet, asset_type)
+        active_engines[uid] = runner
+        runner.start()
+
+    return jsonify({"success": True, "msg": f"Đã khởi chạy Engine Auto cho game {game.upper()} thành công!"})
+
+@app.route('/stop_engine', methods=['POST'])
+def stop_engine():
+    with engine_lock:
+        for k, eng in list(active_engines.items()):
+            eng.running = False
+        active_engines.clear()
+    return jsonify({"success": True, "msg": "Đã dừng tất cả tiến trình Auto!"})
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
