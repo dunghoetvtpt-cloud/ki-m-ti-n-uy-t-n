@@ -1,10 +1,12 @@
 {
     "keys": {
         "VIP-TIOSO10Q": {
-            "status": "chua_dung",
-            "used_by": [],
+            "status": "da_dung",
+            "used_by": [
+                "9056805534"
+            ],
             "created_at": 1794410428.7174423,
-            "expire_at": null,
+            "expire_at": 1794568795.3137925,
             "duration_hours": 24.0,
             "is_vip": true,
             "max_uses": 1,
