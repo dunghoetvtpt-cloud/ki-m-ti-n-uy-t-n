@@ -11,10 +11,12 @@
             "total_bets_count": 0
         },
         "VIP-IGU68QNW": {
-            "status": "chua_dung",
-            "used_by": [],
+            "status": "da_dung",
+            "used_by": [
+                "127.0.0.1"
+            ],
             "created_at": 1794497669.776786,
-            "expire_at": null,
+            "expire_at": 1794584080.6010826,
             "duration_hours": 24.0,
             "is_vip": true,
             "max_uses": 1,
