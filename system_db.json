@@ -4,7 +4,7 @@
             "status": "chua_dung",
             "used_by": [],
             "created_at": 1794496242.0596032,
-            "expire_at": null,
+            "expire_at": 1794583171.2540092,
             "duration_hours": 24.0,
             "is_vip": true,
             "max_uses": 1,
