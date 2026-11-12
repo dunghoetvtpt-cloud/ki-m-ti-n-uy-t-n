@@ -9,6 +9,16 @@
             "is_vip": true,
             "max_uses": 1,
             "total_bets_count": 0
+        },
+        "VIP-IGU68QNW": {
+            "status": "chua_dung",
+            "used_by": [],
+            "created_at": 1794497669.776786,
+            "expire_at": null,
+            "duration_hours": 24.0,
+            "is_vip": true,
+            "max_uses": 1,
+            "total_bets_count": 0
         }
     },
     "banned_users": {},
