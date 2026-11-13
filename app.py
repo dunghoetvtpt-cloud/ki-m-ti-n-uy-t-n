@@ -104,6 +104,7 @@ def get_bot_instance(key_code, game_type):
             server_bots[bot_id] = {
                 "uid": "", "skey": "", "asset_type": "BUILD",
                 "base_bet": 1.0, "bet_amount_total": "1",
+                "multiplier": 2.0, "lose_count": 3, "rest_stop": 1,
                 "max_rounds": 0, "max_continuous_losses": 0,
                 "stop_loss_amount": 0.0, "take_profit_amount": 0.0,
                 "running": False, "stop_event": Event(),
@@ -233,7 +234,10 @@ def dashboard():
 
     esc_bot = get_bot_instance(key_code, "escape")
     spr_bot = get_bot_instance(key_code, "sprint")
-    return render_template_string(DASHBOARD_HTML, h=h, m=m, is_vip=is_vip, key_code=key_code, esc=esc_bot, spr=spr_bot)
+    win_bot = get_bot_instance(key_code, "winhash")
+    if win_bot["base_bet"] == 1.0 and win_bot["total_bets"] == 0:
+        win_bot["base_bet"] = 10.0
+    return render_template_string(DASHBOARD_HTML, h=h, m=m, is_vip=is_vip, key_code=key_code, esc=esc_bot, spr=spr_bot, win=win_bot)
 
 @app.route('/logout')
 def logout():
@@ -343,7 +347,7 @@ def api_game_action():
     key_code = session.get("active_key")
     is_vip = session.get("web_is_vip", False)
     
-    if game_type not in ["escape", "sprint"]:
+    if game_type not in ["escape", "sprint", "winhash"]:
         return jsonify({"success": False, "msg": "Loại trò chơi không hợp lệ."})
     
     bot_inst = get_bot_instance(key_code, game_type)
@@ -353,8 +357,8 @@ def api_game_action():
         try:
             parsed_url = urlparse(link_str)
             query_params = parse_qs(parsed_url.query)
-            uid_str = query_params.get("userId", [None])[0]
-            skey = query_params.get("secretKey", [None])[0]
+            uid_str = query_params.get("userId", [None])[0] or query_params.get("user_id", [None])[0]
+            skey = query_params.get("secretKey", [None])[0] or query_params.get("user_secret_key", [None])[0] or query_params.get("secret_key", [None])[0]
             if uid_str and skey:
                 bot_inst["uid"] = uid_str
                 bot_inst["skey"] = skey
@@ -379,6 +383,13 @@ def api_game_action():
             else: bot_inst["base_bet"] = float(bet_val)
         except: return jsonify({"success": False, "msg": "Mức cược không hợp lệ."})
 
+        if game_type == "winhash":
+            try:
+                bot_inst["multiplier"] = float(str(data.get("multiplier", 2.0)).replace(",", "."))
+                bot_inst["lose_count"] = int(data.get("lose_count", 3))
+                bot_inst["rest_stop"] = int(data.get("rest_stop", 1))
+            except: pass
+
         try:
             mr = int(data.get("max_rounds", 0))
             bot_inst["max_rounds"] = mr if is_vip else (mr if mr > 0 else 0)
@@ -400,8 +411,10 @@ def api_game_action():
             bot_inst["last_log"] = "Đang khởi động tiến trình tự động hóa..."
             if game_type == "escape":
                 t = Thread(target=run_eternal_escape_engine, args=(key_code, bot_inst), daemon=True)
-            else:
+            elif game_type == "sprint":
                 t = Thread(target=run_eternal_sprint_engine, args=(key_code, bot_inst), daemon=True)
+            else:
+                t = Thread(target=run_eternal_winhash_engine, args=(key_code, bot_inst), daemon=True)
             bot_inst["thread"] = t
             t.start()
             return jsonify({"success": True, "running": True, "msg": "Đã khởi động hệ thống tự động."})
@@ -534,6 +547,198 @@ def run_eternal_sprint_engine(key_code, bot_inst):
             if not bot_inst["running"] or bot_inst["stop_event"].is_set(): break
             time.sleep(1)
 
+def run_eternal_winhash_engine(key_code, bot_inst):
+    BASE = "https://api.winhash.net/lucky_game/v2"
+    session_req = requests.Session()
+    
+    total = float(bot_inst["base_bet"])
+    mult = float(bot_inst.get("multiplier", 2.0))
+    lose_count = int(bot_inst.get("lose_count", 3))
+    rest_stop = int(bot_inst.get("rest_stop", 1))
+    
+    cur = total / 2.0
+    losses = 0
+    rest = 0
+    last_issue = None
+
+    def get_headers():
+        return {
+            "accept": "*/*",
+            "accept-language": "vi-VN,vi;q=0.9",
+            "content-type": "application/json",
+            "country-code": "vn",
+            "origin": "https://winhash.io",
+            "referer": "https://winhash.io/",
+            "user-agent": "Mozilla/5.0",
+            "user-id": str(bot_inst["uid"]),
+            "user-login": "login_v2",
+            "user-secret-key": str(bot_inst["skey"]),
+            "xb-language": "vi-VN"
+        }
+
+    def current():
+        try:
+            r = session_req.get(
+                f"https://api.winhash.net/lucky_game/home?game_id=1&asset={bot_inst['asset_type']}",
+                headers=get_headers(),
+                timeout=10
+            )
+            d = r.json().get("data", {})
+            items = d.get("bet_section", {}).get("sum_in_range", {}).get("items", [])
+            small = next((x for x in items if x.get("props", {}).get("value") == [3, 9]), None)
+            big = next((x for x in items if x.get("props", {}).get("value") == [12, 18]), None)
+            return d.get("issue_id"), small, big, int(d.get("expire_seconds", 50))
+        except Exception:
+            return None, None, None, 50
+
+    def order(iid, s, b, amt_each):
+        try:
+            r = session_req.post(
+                f"{BASE}/create_order",
+                headers=get_headers(),
+                json={
+                    "game_id": 1,
+                    "issue_id": iid,
+                    "items": [
+                        {"id": s["id"], "amount": str(amt_each), "asset": bot_inst["asset_type"]},
+                        {"id": b["id"], "amount": str(amt_each), "asset": bot_inst["asset_type"]}
+                    ]
+                },
+                timeout=10
+            )
+            try:
+                data = r.json()
+            except Exception:
+                data = {"raw": r.text}
+            return r.status_code, data
+        except Exception as e:
+            return None, {"error": str(e)}
+
+    def getres(iid):
+        try:
+            r = session_req.get(
+                "https://api.winhash.net/lucky_game/my_orders",
+                params={"game_id": 1, "page": 1, "page_size": 15, "asset": bot_inst["asset_type"], "game": "hash_lotto"},
+                headers=get_headers(),
+                timeout=10
+            )
+            orders = r.json().get("data", {}).get("orders", [])
+            for o in orders:
+                if str(o.get("issue_id")) == str(iid):
+                    st = o.get("state", {})
+                    if st.get("state") != "finish":
+                        return None
+                    raw = st.get("lucky_data")
+                    lucky = json.loads(raw) if isinstance(raw, str) else raw
+                    return {
+                        "lucky": lucky,
+                        "is_hit": o.get("is_hit", False),
+                        "hit_amount": o.get("hit_amount", 0),
+                        "bet_total": o.get("bet_total", 0)
+                    }
+        except Exception:
+            pass
+        return None
+
+    while bot_inst["running"] and not bot_inst["stop_event"].is_set():
+        try:
+            if bot_inst["max_continuous_losses"] > 0 and bot_inst["streak_loss"] >= bot_inst["max_continuous_losses"]:
+                bot_inst["running"] = False; bot_inst["last_log"] = "Dừng khẩn cấp: Thua liên tiếp quá giới hạn."; break
+            if bot_inst["stop_loss_amount"] > 0 and bot_inst["total_profit"] <= -Decimal(str(bot_inst["stop_loss_amount"])):
+                bot_inst["running"] = False; bot_inst["last_log"] = "Dừng khẩn cấp: Đã chạm ngưỡng cắt lỗ."; break
+            if bot_inst["take_profit_amount"] > 0 and bot_inst["total_profit"] >= Decimal(str(bot_inst["take_profit_amount"])):
+                bot_inst["running"] = False; bot_inst["last_log"] = "Dừng khẩn cấp: Đã đạt mục tiêu lợi nhuận."; break
+            if bot_inst["max_rounds"] > 0 and bot_inst["total_bets"] >= bot_inst["max_rounds"]:
+                bot_inst["running"] = False; bot_inst["last_log"] = f"Đã hoàn thành định mức {bot_inst['max_rounds']} ván."; break
+
+            if rest > 0:
+                bot_inst["last_log"] = f"Đang nghỉ {rest} phiên theo cấu hình..."
+                rest -= 1
+                for _ in range(15):
+                    if not bot_inst["running"] or bot_inst["stop_event"].is_set(): break
+                    time.sleep(1)
+                continue
+
+            iid, sm, bg, exp = current()
+            if not iid or not sm or not bg or iid == last_issue:
+                bot_inst["last_log"] = "Đang chờ phiên WINHASH mới..."
+                for _ in range(5):
+                    if not bot_inst["running"] or bot_inst["stop_event"].is_set(): break
+                    time.sleep(1)
+                continue
+
+            bot_inst["last_log"] = f"PHIÊN #{iid} | Small & Big | Mỗi cửa: {cur} {bot_inst['asset_type']}"
+            status, res = order(iid, sm, bg, cur)
+
+            if status != 200:
+                bot_inst["last_log"] = f"Gửi cược thất bại (HTTP {status}), đang thử lại..."
+                for _ in range(10):
+                    if not bot_inst["running"] or bot_inst["stop_event"].is_set(): break
+                    time.sleep(1)
+                continue
+
+            last_issue = iid
+            wait_sec = max(5, exp)
+            for s_left in range(wait_sec, 0, -1):
+                if not bot_inst["running"] or bot_inst["stop_event"].is_set(): break
+                bot_inst["last_log"] = f"PHIÊN #{iid} | Đã cược {cur*2:.2f} {bot_inst['asset_type']} | Chờ KQ ({s_left}s)..."
+                time.sleep(1)
+
+            if not bot_inst["running"] or bot_inst["stop_event"].is_set(): break
+
+            result = None
+            for _ in range(6):
+                if not bot_inst["running"] or bot_inst["stop_event"].is_set(): break
+                result = getres(iid)
+                if result: break
+                for _ in range(5):
+                    if not bot_inst["running"] or bot_inst["stop_event"].is_set(): break
+                    time.sleep(1)
+
+            if not result:
+                bot_inst["last_log"] = f"PHIÊN #{iid}: Chưa có kết quả, bỏ qua phiên..."
+                continue
+
+            lucky = result["lucky"]
+            hit = result["is_hit"]
+            bt = float(result["bet_total"] or cur * 2)
+            ha = float(result["hit_amount"] or 0)
+            
+            bot_inst["total_bets"] += 1
+            lucky_sum = sum(lucky) if isinstance(lucky, list) else lucky
+
+            if hit and ha > bt:
+                profit = Decimal(str(ha)) - Decimal(str(bt))
+                bot_inst["total_profit"] += profit
+                bot_inst["wins"] += 1
+                bot_inst["streak_loss"] = 0
+                cur = total / 2.0
+                losses = 0
+                bot_inst["last_log"] = f"PHIÊN #{iid} | KQ {lucky} (Tổng {lucky_sum}) | THẮNG +{profit:.4f} -> Reset cược"
+            else:
+                loss_val = Decimal(str(bt))
+                bot_inst["total_profit"] -= loss_val
+                bot_inst["losses"] += 1
+                bot_inst["streak_loss"] += 1
+                cur *= mult
+                losses += 1
+                if losses >= lose_count:
+                    rest = rest_stop
+                    losses = 0
+                    bot_inst["last_log"] = f"PHIÊN #{iid} | KQ {lucky} (Tổng {lucky_sum}) | THUA -{loss_val:.4f} -> Nghỉ {rest_stop} phiên"
+                else:
+                    bot_inst["last_log"] = f"PHIÊN #{iid} | KQ {lucky} (Tổng {lucky_sum}) | THUA -{loss_val:.4f} -> Nhân cược {cur:.2f}"
+
+            for _ in range(5):
+                if not bot_inst["running"] or bot_inst["stop_event"].is_set(): break
+                time.sleep(1)
+
+        except Exception:
+            bot_inst["last_log"] = "Lỗi kết nối WINHASH, đang tự động thử lại..."
+            for _ in range(5):
+                if not bot_inst["running"] or bot_inst["stop_event"].is_set(): break
+                time.sleep(1)
+
 HOME_HTML = """
 <!DOCTYPE html>
 <html lang="vi">
@@ -655,7 +860,7 @@ DASHBOARD_HTML = """
             color: #f8fafc; padding: 18px; min-height: 100vh;
         }
         .container {
-            max-width: 540px; margin: 0 auto; background: rgba(11, 17, 32, 0.85); backdrop-filter: blur(28px);
+            max-width: 560px; margin: 0 auto; background: rgba(11, 17, 32, 0.85); backdrop-filter: blur(28px);
             border: 1px solid rgba(255, 255, 255, 0.08); padding: 24px; border-radius: 26px; box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.85);
         }
         .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 16px; margin-bottom: 20px; }
@@ -667,8 +872,8 @@ DASHBOARD_HTML = """
         .logout { color: #f87171; text-decoration: none; font-size: 13px; font-weight: 700; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.25); padding: 7px 12px; border-radius: 12px; transition: 0.2s; }
         .logout:hover { background: rgba(239, 68, 68, 0.25); }
         
-        .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: rgba(2, 6, 23, 0.7); padding: 6px; border-radius: 16px; margin-bottom: 20px; }
-        .tab-btn { padding: 12px; background: transparent; border: none; color: #94a3b8; font-weight: 700; border-radius: 12px; cursor: pointer; text-align: center; font-size: 13px; transition: 0.2s; }
+        .tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: rgba(2, 6, 23, 0.7); padding: 6px; border-radius: 16px; margin-bottom: 20px; }
+        .tab-btn { padding: 11px 8px; background: transparent; border: none; color: #94a3b8; font-weight: 700; border-radius: 12px; cursor: pointer; text-align: center; font-size: 12.5px; transition: 0.2s; }
         .tab-btn.active { background: linear-gradient(135deg, #4f46e5, #4338ca); color: #fff; box-shadow: 0 8px 20px -4px rgba(79, 70, 229, 0.5); }
         
         .panel { display: none; }
@@ -683,6 +888,7 @@ DASHBOARD_HTML = """
         }
         input:focus, select:focus { border-color: #4f46e5; }
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
         .btn-action-sm { background: #4f46e5; color: #fff; border: none; padding: 0 18px; border-radius: 12px; font-weight: 700; font-size: 13px; cursor: pointer; white-space: nowrap; transition: 0.2s; }
         .btn-action-sm:hover { background: #4338ca; }
         .btn-danger-sm { background: #dc2626; color: #fff; border: none; padding: 0 16px; border-radius: 12px; font-weight: 700; font-size: 13px; cursor: pointer; white-space: nowrap; transition: 0.2s; }
@@ -741,9 +947,10 @@ DASHBOARD_HTML = """
         <div class="tabs">
             <button class="tab-btn active" onclick="switchTab('escape', this)">Vua Thoát Hiểm</button>
             <button class="tab-btn" onclick="switchTab('sprint', this)">Đua Tốc Độ</button>
+            <button class="tab-btn" onclick="switchTab('winhash', this)">WINHASH</button>
         </div>
 
-        <!-- PANEL VUA THOÁT HIỂM -->
+        <!-- PANEL 1: VUA THOÁT HIỂM -->
         <div id="panel-escape" class="panel active">
             <div class="card-section">
                 <div class="form-group">
@@ -809,7 +1016,7 @@ DASHBOARD_HTML = """
             <button class="btn-reset" onclick="resetStats('escape')">Làm Mới Thống Kê</button>
         </div>
 
-        <!-- PANEL ĐUA TỐC ĐỘ -->
+        <!-- PANEL 2: ĐUA TỐC ĐỘ -->
         <div id="panel-sprint" class="panel">
             <div class="card-section">
                 <div class="form-group">
@@ -867,6 +1074,87 @@ DASHBOARD_HTML = """
             </div>
             <button class="btn-reset" onclick="resetStats('sprint')">Làm Mới Thống Kê</button>
         </div>
+
+        <!-- PANEL 3: WINHASH -->
+        <div id="panel-winhash" class="panel">
+            <div class="card-section">
+                <div class="form-group">
+                    <label>Liên Kết Tài Khoản WINHASH:</label>
+                    <div id="winhash_link_wrapper" style="display: {% if win.uid %}none{% else %}block{% endif %};">
+                        <div class="input-row">
+                            <input type="text" id="winhash_link" placeholder="Dán liên kết có chứa userId=...&secretKey=...">
+                            <button class="btn-action-sm" onclick="saveLink('winhash')">Lưu</button>
+                        </div>
+                    </div>
+                    <div id="winhash_account_card" class="account-box" style="display: {% if win.uid %}flex{% else %}none{% endif %};">
+                        <div class="account-info">
+                            <span class="acc-label">Tài Khoản Đang Liên Kết</span>
+                            <span class="acc-uid" id="winhash_uid_display">UID: {{ win.uid }}</span>
+                        </div>
+                        <button class="btn-danger-sm" onclick="deleteLink('winhash')">Xóa Nick</button>
+                    </div>
+                </div>
+
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Loại Tiền (Asset):</label>
+                        <select id="winhash_asset">
+                            <option value="BUILD" {% if win.asset_type == 'BUILD' %}selected{% endif %}>BUILD</option>
+                            <option value="WORLD" {% if win.asset_type == 'WORLD' %}selected{% endif %}>WORLD</option>
+                            <option value="USDT" {% if win.asset_type == 'USDT' %}selected{% endif %}>USDT</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Tổng Cược (Chia 2 Cửa):</label>
+                        <input type="number" id="winhash_bet" value="{{ win.base_bet }}" step="0.1" min="0.1">
+                    </div>
+                </div>
+
+                <div class="grid-3">
+                    <div class="form-group">
+                        <label>Hệ Số Nhân:</label>
+                        <input type="number" id="winhash_multiplier" value="{{ win.multiplier }}" step="0.1" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label>Thua X Ván:</label>
+                        <input type="number" id="winhash_lose_count" value="{{ win.lose_count }}" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label>Nghỉ Y Phiên:</label>
+                        <input type="number" id="winhash_rest_stop" value="{{ win.rest_stop }}" min="0">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Giới Hạn Số Ván (0 = Vĩnh Viễn):</label>
+                    <input type="number" id="winhash_max_rounds" value="{{ win.max_rounds }}" min="0">
+                </div>
+
+                {% if is_vip %}
+                <div class="grid-2">
+                    <div class="form-group"><label>Cắt Lỗ (0 = Tắt):</label><input type="number" id="winhash_stop_loss" value="{{ win.stop_loss_amount }}" step="0.1"></div>
+                    <div class="form-group"><label>Chốt Lời (0 = Tắt):</label><input type="number" id="winhash_take_profit" value="{{ win.take_profit_amount }}" step="0.1"></div>
+                </div>
+                {% endif %}
+            </div>
+
+            <button id="btn_winhash_toggle" class="btn-main {% if win.running %}btn-stop{% else %}btn-start{% endif %}" onclick="toggleBot('winhash')">
+                {% if win.running %}Dừng Chạy Tự Động{% else %}Bật Tự Động 24/7{% endif %}
+            </button>
+
+            <div class="live-log">
+                <div id="winhash_dot" class="dot-live {% if win.running %}active{% endif %}"></div>
+                <span id="winhash_log_text">{{ win.last_log }}</span>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-item"><div class="label">Trạng Thái</div><div class="val" id="winhash_status_text" style="color: {% if win.running %}#34d399{% else %}#f87171{% endif %};">{% if win.running %}Đang Chạy 24/7{% else %}Đang Dừng{% endif %}</div></div>
+                <div class="stat-item"><div class="label">Tổng Ván Cược</div><div class="val" id="winhash_tot_bets" style="color: #38bdf8;">{{ win.total_bets }}</div></div>
+                <div class="stat-item"><div class="label">Thắng / Thua</div><div class="val" id="winhash_win_loss">{{ win.wins }} / {{ win.losses }} (0.0%)</div></div>
+                <div class="stat-item"><div class="label">Tổng Lợi Nhuận</div><div class="val" id="winhash_profit" style="color: #34d399;">+0.0000 {{ win.asset_type }}</div></div>
+            </div>
+            <button class="btn-reset" onclick="resetStats('winhash')">Làm Mới Thống Kê</button>
+        </div>
     </div>
 
     <script>
@@ -915,12 +1203,20 @@ DASHBOARD_HTML = """
             const mr = document.getElementById(game + '_max_rounds');
             const sl = document.getElementById(game + '_stop_loss');
             const tp = document.getElementById(game + '_take_profit');
+            const mult = document.getElementById(game + '_multiplier');
+            const lc = document.getElementById(game + '_lose_count');
+            const rs = document.getElementById(game + '_rest_stop');
 
             fetch('/api/game_action', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     game_type: game, action: 'toggle_bot', asset_type: asset, bet: bet,
-                    max_rounds: mr ? mr.value : 0, stop_loss: sl ? sl.value : 0, take_profit: tp ? tp.value : 0
+                    max_rounds: mr ? mr.value : 0,
+                    stop_loss: sl ? sl.value : 0,
+                    take_profit: tp ? tp.value : 0,
+                    multiplier: mult ? mult.value : 2.0,
+                    lose_count: lc ? lc.value : 3,
+                    rest_stop: rs ? rs.value : 1
                 })
             }).then(res => res.json()).then(data => {
                 showToast(data.msg);
@@ -946,7 +1242,7 @@ DASHBOARD_HTML = """
             }).then(res => res.json()).then(data => { showToast(data.msg); });
         }
         setInterval(() => {
-            ['escape', 'sprint'].forEach(game => {
+            ['escape', 'sprint', 'winhash'].forEach(game => {
                 fetch('/api/game_action', {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ game_type: game, action: 'get_status' })
@@ -1074,7 +1370,7 @@ ADMIN_DASHBOARD_HTML = """
                         </div>
                     </td>
                     <td>{% if expire_at and expire_at > now %}<b style="color: #38bdf8;">{{ rem_h }}h {{ rem_m }}p</b>{% else %}<small style="color: #94a3b8;">Chưa kích hoạt</small>{% endif %}</td>
-                    <span>{{ used_list|length }}/{{ info.get('max_uses', 1) }}</span>
+                    <td><span>{{ used_list|length }}/{{ info.get('max_uses', 1) }}</span></td>
                     <td>
                         <div style="display: flex; gap: 6px;">
                             <button class="btn-action btn-copy-code" onclick="navigator.clipboard.writeText('{{ k }}')">Sao Chép</button>
@@ -1097,7 +1393,11 @@ ADMIN_DASHBOARD_HTML = """
         }).then(res => res.json()).then(data => { if(data.success) { location.reload(); } });
     }
     function modifyKeyTime(key, mode) {
-        let hours = document.getElementById("time_" + key, 24).value;
+        let hours = document.getElementById("time_" + key).value;
+        fetch("/quan-ly-bi-mat-dunghoet/modify_key_time", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ key: key, hours: hours, mode: mode })
+        }).then(res => res.json()).then(data => { if(data.success) { location.reload(); } });
     }
     </script>
 </body></html>
