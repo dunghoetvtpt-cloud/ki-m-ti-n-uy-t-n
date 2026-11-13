@@ -1,40 +1,5 @@
 {
-    "keys": {
-        "VIP-2O7D79CO7N": {
-            "status": "chua_dung",
-            "used_by": [],
-            "created_at": 1794496242.0596032,
-            "expire_at": 1794583171.2540092,
-            "duration_hours": 24.0,
-            "is_vip": true,
-            "max_uses": 1,
-            "total_bets_count": 0
-        },
-        "VIP-IGU68QNW": {
-            "status": "da_dung",
-            "used_by": [
-                "127.0.0.1"
-            ],
-            "created_at": 1794497669.776786,
-            "expire_at": 1794584080.6010826,
-            "duration_hours": 24.0,
-            "is_vip": true,
-            "max_uses": 1,
-            "total_bets_count": 0
-        },
-        "ADMIN-UYTY5CGX": {
-            "status": "da_dung",
-            "used_by": [
-                "116.99.252.177, 172.71.151.71, 10.29.252.162"
-            ],
-            "created_at": 1794572695.0357723,
-            "expire_at": 1794659104.3146355,
-            "duration_hours": 24.0,
-            "is_vip": false,
-            "max_uses": 1,
-            "total_bets_count": 0
-        }
-    },
+    "keys": {},
     "banned_users": {},
     "maintenance": {
         "active": false,
