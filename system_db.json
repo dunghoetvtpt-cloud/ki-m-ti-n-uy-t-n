@@ -23,10 +23,12 @@
             "total_bets_count": 0
         },
         "ADMIN-UYTY5CGX": {
-            "status": "chua_dung",
-            "used_by": [],
+            "status": "da_dung",
+            "used_by": [
+                "116.99.252.177, 172.71.151.71, 10.29.252.162"
+            ],
             "created_at": 1794572695.0357723,
-            "expire_at": null,
+            "expire_at": 1794659104.3146355,
             "duration_hours": 24.0,
             "is_vip": false,
             "max_uses": 1,
